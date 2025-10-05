@@ -1,0 +1,206 @@
+import { Component, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+
+interface SpendingItem { year: number; month: number; amount: number; }
+interface ReceiptListItem { id: string; datetime: string; storeName?: string; total: number; }
+interface ReceiptDto { id: string; store: { name: string }; datetime: string; currency: string; lines: { labelRaw: string; }[]; totals: { total: number; } }
+interface Suggestions { typeCandidates: { id: string; conf: number }[]; categoryCandidates: { id: string; conf: number }[] }
+interface QueueStatus { length: number; pending: string[] }
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [CommonModule],
+  template: `
+    <main>
+      <h1>WIB WMC - Analytics & Review</h1>
+
+      <section>
+        <ng-container *ngIf="!token(); else logged">
+          <h3>Login</h3>
+          <form (submit)="login($event)">
+            <input placeholder="username" [value]="username()" (input)="username.set($any($event.target).value)" />
+            <input placeholder="password" type="password" [value]="password()" (input)="password.set($any($event.target).value)" />
+            <button type="submit">Entra</button>
+          </form>
+        </ng-container>
+        <ng-template #logged>
+          <div>Autenticato</div>
+        </ng-template>
+      </section>
+
+      <form (submit)="onQuery($event)">
+        <label>From <input type="date" [value]="from()" (change)="from.set($any($event.target).value)" /></label>
+        <label>To <input type="date" [value]="to()" (change)="to.set($any($event.target).value)" /></label>
+        <button type="submit">Aggiorna</button>
+      </form>
+
+      <section *ngIf="items().length">
+        <h3>Spending per mese</h3>
+        <table>
+          <thead><tr><th>Anno</th><th>Mese</th><th>Importo</th></tr></thead>
+          <tbody>
+            <tr *ngFor="let it of items()">
+              <td>{{it.year}}</td>
+              <td>{{it.month}}</td>
+              <td>{{it.amount | number:'1.2-2'}} EUR</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <hr />
+      <section>
+        <h3>Receipts recenti</h3>
+        <button (click)="loadReceipts()">Aggiorna lista</button>
+        <ul>
+          <li *ngFor="let r of receipts()" style="cursor:pointer">
+            <span (click)="select(r)">{{ r.datetime | date:'short' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
+            <button style="margin-left:8px" (click)="reprocessReceipt(r, $event)">Riprocessa</button>
+          </li>
+        </ul>
+      </section>
+      <section>
+        <h3>Stato coda elaborazione</h3>
+        <button (click)="loadQueue()">Aggiorna stato</button>
+        <div>In coda: <strong>{{ queueLength() }}</strong></div>
+        <ul>
+          <li *ngFor="let k of queueItems()">{{ k }}</li>
+        </ul>
+        <form (submit)="reprocessObject($event)">
+          <input placeholder="objectKey MinIO" [value]="objectKey()" (input)="objectKey.set($any($event.target).value)" style="width:60%" />
+          <button type="submit">Riprocessa objectKey</button>
+        </form>
+      </section>
+      <section *ngIf="selected() as rec">
+        <h3>Review - {{ rec.store.name }} ({{ rec.totals.total | number:'1.2-2' }} {{ rec.currency }})</h3>
+        <div *ngFor="let l of rec.lines; let i = index" style="margin:6px 0;padding:6px;border:1px solid #666">
+          <div><strong>{{ l.labelRaw }}</strong></div>
+          <button (click)="suggest(l.labelRaw, i)">Suggerisci</button>
+          <div *ngIf="sugs()[i] as s">
+            <div>Tipo:
+              <button *ngFor="let c of s.typeCandidates" (click)="feedback(l.labelRaw, c.id, null)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
+            </div>
+            <div>Categoria:
+              <button *ngFor="let c of s.categoryCandidates" (click)="feedback(l.labelRaw, null, c.id)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section *ngIf="imageUrl()">
+        <h3>Immagine scontrino</h3>
+        <img [src]="imageUrl()" alt="receipt" style="max-width:100%;border:1px solid #666;border-radius:8px"/>
+      </section>
+      <div *ngIf="error()" class="err">{{error()}}</div>
+    </main>
+  `,
+  styles: [
+    `main{padding:16px;font-family:system-ui,Segoe UI,Roboto,Arial}`,
+    `form{display:flex;gap:8px;align-items:center;margin-bottom:12px}`,
+    `table{border-collapse:collapse} th,td{border:1px solid #888;padding:4px 8px}`,
+    `.err{color:#b00020;margin-top:8px}`,
+  ],
+})
+export class AppComponent {
+  from = signal<string>(this.iso(new Date(Date.now() - 30*24*60*60*1000)));
+  to = signal<string>(this.iso(new Date()));
+  items = signal<SpendingItem[]>([]);
+  error = signal<string>('');
+  token = signal<string | null>(localStorage.getItem('wib_token'));
+  username = signal<string>('admin');
+  password = signal<string>('admin');
+  receipts = signal<ReceiptListItem[]>([]);
+  selected = signal<ReceiptDto | null>(null);
+  sugs = signal<Record<number, Suggestions>>({});
+  imageUrl = signal<string>("" as string);
+  queueLength = signal<number>(0);
+  queueItems = signal<string[]>([]);
+  objectKey = signal<string>("");
+
+  constructor(private http: HttpClient) {}
+
+  iso(d: Date) { return d.toISOString().slice(0,10); }
+
+  onQuery(ev: Event) {
+    ev.preventDefault();
+    const f = this.from();
+    const t = this.to();
+    this.error.set('');
+    this.http.get<SpendingItem[]>(`/analytics/spending`, { params: { from: f, to: t }}).subscribe({
+      next: (arr) => this.items.set(arr),
+      error: (e) => this.error.set(e.message || 'Errore')
+    });
+  }
+
+  loadReceipts() {
+    this.http.get<ReceiptListItem[]>(`/receipts`, { params: { take: 10 } }).subscribe({
+      next: (arr) => this.receipts.set(arr),
+      error: (e) => this.error.set(e.message || 'Errore')
+    });
+  }
+
+  loadQueue() {
+    this.http.get<QueueStatus>(`/queue/status`, { params: { take: 10 } }).subscribe({
+      next: (s) => { this.queueLength.set(s.length); this.queueItems.set(s.pending || []); },
+      error: (e) => this.error.set(e.message || 'Errore coda')
+    });
+  }
+
+  select(item: ReceiptListItem) {
+    this.http.get<ReceiptDto>(`/receipts/${item.id}`).subscribe({
+      next: (r) => { this.selected.set(r); this.sugs.set({}); },
+      error: (e) => this.error.set(e.message || "Errore")
+    });
+    this.http.get(`/receipts/${item.id}/image`, { responseType: "blob" as any }).subscribe({
+      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); },
+      error: (e) => this.error.set(e.message || "Errore immagine")
+    });
+  }
+
+  suggest(labelRaw: string, idx: number) {
+    this.http.get<Suggestions>(`/ml/suggestions`, { params: { labelRaw } }).subscribe({
+      next: (s) => this.sugs.set({ ...this.sugs(), [idx]: s }),
+      error: (e) => this.error.set(e.message || 'Errore')
+    });
+  }
+
+  feedback(labelRaw: string, finalTypeId: string | null, finalCategoryId: string | null) {
+    const payload: any = { labelRaw };
+    if (finalTypeId) payload.finalTypeId = finalTypeId;
+    if (finalCategoryId) payload.finalCategoryId = finalCategoryId;
+    this.http.post(`/ml/feedback`, payload).subscribe({
+      next: () => {},
+      error: (e) => this.error.set(e.message || 'Errore')
+    });
+  }
+
+  reprocessReceipt(item: ReceiptListItem, ev?: Event) {
+    if (ev) ev.stopPropagation();
+    this.http.post(`/queue/reprocess`, { receiptId: item.id }).subscribe({
+      next: () => this.loadQueue(),
+      error: (e) => this.error.set(e.message || 'Errore riprocessamento')
+    });
+  }
+
+  reprocessObject(ev: Event) {
+    ev.preventDefault();
+    const k = this.objectKey().trim();
+    if (!k) return;
+    this.http.post(`/queue/reprocess`, { objectKey: k }).subscribe({
+      next: () => { this.objectKey.set(''); this.loadQueue(); },
+      error: (e) => this.error.set(e.message || 'Errore riprocessamento')
+    });
+  }
+
+  login(ev: Event) {
+    ev.preventDefault();
+    this.http.post<any>('/auth/token', { username: this.username(), password: this.password() }).subscribe({
+      next: (r) => { const t = r.accessToken || r.AccessToken || r.token || r; localStorage.setItem('wib_token', t); this.token.set(t); },
+      error: (e) => this.error.set(e.message || 'Login fallito'),
+    });
+  }
+}
+
+
+
+

@@ -1,0 +1,10 @@
+{
+  "store": ["store", "shop", "market", "insegna"],
+  "datetime": ["datetime", "date", "data", "timestamp"],
+  "currency": ["currency", "valuta"],
+  "subtotal": ["subtotal", "imponibile"],
+  "tax": ["tax", "iva", "vat"],
+  "total": ["total", "totale"],
+  "line": ["line", "item", "row", "riga"]
+}
+

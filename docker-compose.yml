@@ -1,0 +1,154 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/WIB.API/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      SWAGGER__ENABLED: "true"
+      ConnectionStrings__Default: Host=db;Database=wib;Username=wib;Password=wib
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: wib
+      Minio__SecretKey: wibsecret
+      Redis__Connection: redis:6379
+      Ocr__Endpoint: http://ocr:8081
+      Kie__Endpoint: http://ocr:8081
+      Ml__Endpoint: http://ml:8082
+      Auth__Key: dev-secret-change-me-please-32-bytes-min
+      Auth__Issuer: wib
+      Auth__Audience: wib-clients
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+  worker:
+    build:
+      context: .
+      dockerfile: backend/WIB.Worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Default: Host=db;Database=wib;Username=wib;Password=wib
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: wib
+      Minio__SecretKey: wibsecret
+      Redis__Connection: redis:6379
+      Ocr__Endpoint: http://ocr:8081
+      Kie__Endpoint: http://ocr:8081
+      Ml__Endpoint: http://ml:8082
+    depends_on:
+      - db
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wib
+      POSTGRES_USER: wib
+      POSTGRES_PASSWORD: wib
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wib"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: wib
+      MINIO_ROOT_PASSWORD: wibsecret
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+  ocr:
+    build:
+      context: .
+      dockerfile: services/ocr/Dockerfile
+    # Monta pesi KIE (PP-Structure/Donut) nel container OCR
+    environment:
+      KIE_MODEL_DIR: /app/kie_models
+      # Opzionali: config/ckpt specifici se il tuo server OCR li supporta
+      # PP_STRUCTURE_SER_CFG: /app/kie_models/ser_infer.yml
+      # PP_STRUCTURE_RE_CFG: /app/kie_models/re_infer.yml
+      # DONUT_CHECKPOINT: /app/kie_models/donut.ckpt
+    volumes:
+      - ./.data/kie:/app/kie_models:ro
+    ports:
+      - "8081:8081"
+  ml:
+    build:
+      context: .
+      dockerfile: services/ml/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      MODEL_DIR: /app/models
+      TOP_K: "3"
+    volumes:
+      - ./.data/models:/app/models
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+  proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    depends_on:
+      - api
+      - ocr
+      - ml
+    ports:
+      - "8085:80"
+
+  # --- Strumenti di annotazione (opzionali) ---
+  labelstudio:
+    image: heartexlabs/label-studio:latest
+    environment:
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /data
+    ports:
+      - "8088:8080"   # UI Label Studio
+    volumes:
+      - ./.data/labelstudio:/label-studio/data
+      - ./.data/images:/data:ro  # immagini locali da annotare (solo lettura)
+
+  doccano:
+    image: doccano/doccano:latest
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+      ADMIN_EMAIL: admin@example.com
+    ports:
+      - "8089:8000"   # UI Doccano
+    volumes:
+      - ./.data/doccano:/data
+  web-devices:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        APP: wib-devices
+    ports:
+      - "4200:80"
+    depends_on:
+      - proxy
+
+  web-wmc:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        APP: wib-wmc
+    ports:
+      - "4201:80"
+    depends_on:
+      - proxy
+
+volumes:
+  pgdata:
+  miniodata:

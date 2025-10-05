@@ -1,0 +1,100 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "projects": {
+    "wib-devices": {
+      "projectType": "application",
+      "root": "apps/wib-devices",
+      "sourceRoot": "apps/wib-devices/src",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:browser",
+          "options": {
+            "outputPath": "dist/wib-devices",
+            "index": "apps/wib-devices/src/index.html",
+            "main": "apps/wib-devices/src/main.ts",
+            "tsConfig": "apps/wib-devices/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "bootstrap/dist/css/bootstrap.min.css",
+              "apps/wib-devices/src/styles.css"
+            ],
+            "polyfills": ["zone.js"],
+            "outputHashing": "all"
+          }
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "main": "apps/wib-devices/src/test.ts",
+            "tsConfig": "apps/wib-devices/tsconfig.spec.json",
+            "karmaConfig": "karma.conf.js",
+            "polyfills": ["zone.js"],
+            "assets": [],
+            "styles": [
+              "bootstrap/dist/css/bootstrap.min.css",
+              "apps/wib-devices/src/styles.css"
+            ],
+            "scripts": []
+          }
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "browserTarget": "wib-devices:build",
+            "proxyConfig": "proxy.conf.json",
+            "port": 4200
+          }
+        }
+      }
+    },
+    "wib-wmc": {
+      "projectType": "application",
+      "root": "apps/wib-wmc",
+      "sourceRoot": "apps/wib-wmc/src",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:browser",
+          "options": {
+            "outputPath": "dist/wib-wmc",
+            "index": "apps/wib-wmc/src/index.html",
+            "main": "apps/wib-wmc/src/main.ts",
+            "tsConfig": "apps/wib-wmc/tsconfig.app.json",
+            "assets": [],
+            "styles": [
+              "bootstrap/dist/css/bootstrap.min.css",
+              "node_modules/@ng-select/ng-select/themes/default.theme.css",
+              "apps/wib-wmc/src/styles.css"
+            ],
+            "polyfills": ["zone.js"],
+            "outputHashing": "all"
+          }
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "main": "apps/wib-wmc/src/test.ts",
+            "tsConfig": "apps/wib-wmc/tsconfig.spec.json",
+            "karmaConfig": "karma.conf.js",
+            "polyfills": ["zone.js"],
+            "assets": [],
+            "styles": [
+              "bootstrap/dist/css/bootstrap.min.css",
+              "node_modules/@ng-select/ng-select/themes/default.theme.css",
+              "apps/wib-wmc/src/styles.css"
+            ],
+            "scripts": []
+          }
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "browserTarget": "wib-wmc:build",
+            "proxyConfig": "proxy.conf.json",
+            "port": 4201
+          }
+        }
+      }
+    }
+  }
+}

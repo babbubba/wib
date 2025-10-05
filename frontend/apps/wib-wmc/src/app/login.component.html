@@ -1,0 +1,17 @@
+<main class="container py-4" style="max-width: 520px;">
+  <h2 class="mb-3">Accedi a WIB</h2>
+  <form [formGroup]="form" (ngSubmit)="submit()" class="card card-body">
+    <div class="mb-3">
+      <label class="form-label">Username</label>
+      <input type="text" formControlName="username" class="form-control" placeholder="username" />
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input type="password" formControlName="password" class="form-control" placeholder="password" />
+    </div>
+    <button class="btn btn-primary" type="submit">Entra</button>
+    <a routerLink="/" class="btn btn-link">Annulla</a>
+    <div *ngIf="error()" class="alert alert-danger mt-3">{{ error() }}</div>
+  </form>
+</main>
+

@@ -1,0 +1,204 @@
+<main class="container py-3">
+  <h2 class="mb-3">Dashboard WMC</h2>
+
+  <!-- Auth handled via dedicated /login route and global interceptor/guard -->
+
+  <form class="row gy-2 gx-2 align-items-center mb-3" (submit)="onQuery($event)">
+    <div class="col-auto">From <input class="form-control" type="date" [value]="from()" (change)="from.set($any($event.target).value)" /></div>
+    <div class="col-auto">To <input class="form-control" type="date" [value]="to()" (change)="to.set($any($event.target).value)" /></div>
+    <div class="col-auto"><button class="btn btn-secondary" type="submit">Aggiorna</button></div>
+  </form>
+
+  <section *ngIf="items().length" class="mb-3">
+    <h5>Spending per mese</h5>
+    <table class="table table-striped">
+      <thead><tr><th>Anno</th><th>Mese</th><th>Importo</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let it of items()">
+          <td>{{it.year}}</td>
+          <td>{{it.month}}</td>
+          <td>{{it.amount | number:'1.2-2'}} EUR</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="mb-3">
+    <h5>Receipts recenti</h5>
+    <button class="btn btn-outline-primary btn-sm mb-2" (click)="loadReceipts()">Aggiorna lista</button>
+    <ul class="list-group">
+      <li class="list-group-item d-flex justify-content-between align-items-center" *ngFor="let r of receipts()" (click)="select(r)" style="cursor:pointer">
+        <span>{{ r.datetime | date:'short' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
+      </li>
+    </ul>
+  </section>
+
+  <section *ngIf="selected() as rec" class="mb-3">
+    <h5>Review / Modifica</h5>
+    <div class="card card-body mb-3">
+      <div class="row g-2 align-items-center">
+        <div class="col-12 col-md-4">
+          <label class="form-label">Negozio</label>
+          <ng-select
+            [items]="storeSugs()"
+            bindLabel="name"
+            [loading]="storeLoading()"
+            [searchable]="true"
+            [clearable]="true"
+            [minTermLength]="2"
+            (search)="onStoreSearch($event.term)"
+            (change)="chooseStore($event)"
+            [ngModel]="{ name: editStoreName() }"
+            (ngModelChange)="editStoreName.set($event?.name||'')">
+            <ng-template ng-option-tmp let-item="item">
+              <div class="d-flex flex-column">
+                <div>{{item.name}}</div>
+                <small class="text-muted" *ngIf="item.address">{{item.address}} {{item.city}} {{item.postalCode}}</small>
+              </div>
+            </ng-template>
+          </ng-select>
+        </div>
+        <div class="col-12 col-sm-6 col-md-4">
+          <label class="form-label">Data/Ora</label>
+          <input type="datetime-local" class="form-control" [value]="editDatetime()" (input)="editDatetime.set($any($event.target).value)" />
+        </div>
+        <div class="col-6 col-sm-3 col-md-2">
+          <label class="form-label">Valuta</label>
+          <input class="form-control" [value]="editCurrency()" (input)="editCurrency.set($any($event.target).value)" />
+        </div>
+        <div class="col-12 col-sm-3 col-md-2 d-grid">
+          <label class="form-label invisible">Azione</label>
+          <button class="btn btn-success" (click)="saveEdits()">Salva modifiche</button>
+        </div>
+      </div>
+      <div class="row g-2 mt-1">
+        <div class="col-12 col-md-5">
+          <label class="form-label">Indirizzo</label>
+          <input class="form-control" [value]="editStoreAddress()" (input)="editStoreAddress.set($any($event.target).value)" />
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Città</label>
+          <input class="form-control" [value]="editStoreCity()" (input)="editStoreCity.set($any($event.target).value)" />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">CAP</label>
+          <input class="form-control" [value]="editStorePostalCode()" (input)="editStorePostalCode.set($any($event.target).value)" />
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label">Partita IVA</label>
+          <input class="form-control" [value]="editStoreVatNumber()" (input)="editStoreVatNumber.set($any($event.target).value)" />
+        </div>
+      </div>
+    </div>
+    <div *ngFor="let l of rec.lines; let i = index" class="card card-body mb-2">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-6 position-relative">
+          <label class="form-label">Etichetta</label>
+          <input class="form-control" [value]="editLines()[i].labelRaw" (input)="onLineChange(i,'labelRaw', $any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Q.tà</label>
+          <input type="number" step="0.001" class="form-control" [value]="editLines()[i].qty" (input)="onLineChange(i,'qty', $any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Prezzo</label>
+          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].unitPrice" (input)="onLineChange(i,'unitPrice', $any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Totale</label>
+          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].lineTotal" (input)="onLineChange(i,'lineTotal', $any($event.target).value)" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Categoria</label>
+          <ng-select
+            [items]="catSugs()[i] || []"
+            bindLabel="name"
+            bindValue="id"
+            [searchable]="true"
+            [clearable]="true"
+            [minTermLength]="2"
+            (search)="onCategorySearch(i, $event.term)"
+            [ngModel]="editLines()[i].categoryId || null"
+            (ngModelChange)="onCategoryIdChange(i, $event)">
+          </ng-select>
+          <div class="mt-1" *ngIf="!editLines()[i]?.categoryId && (editLines()[i]?.categoryName || '').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createCategory(i)">Crea "{{ editLines()[i].categoryName }}"</button>
+          </div>
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label">IVA %</label>
+          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].vatRate || ''" (input)="onLineChange(i,'vatRate', $any($event.target).value)" />
+        </div>
+        <div class="col-auto">
+          <label class="form-label invisible">x</label>
+          <button class="btn btn-sm btn-outline-danger" (click)="removeLine(i)">Elimina</button>
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-sm btn-outline-secondary" (click)="suggest(editLines()[i].labelRaw || l.labelRaw, i)">Suggerisci</button>
+        </div>
+      </div>
+      <div *ngIf="sugs()[i] as s" class="row g-2">
+        <div class="col-6" *ngIf="s.typeCandidates?.length">Tipo:
+          <button class="btn btn-sm btn-outline-primary me-1 mb-1" *ngFor="let c of s.typeCandidates" (click)="feedback(l.labelRaw, c.id, null)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
+        </div>
+        <div class="col-6" *ngIf="s.categoryCandidates?.length">Categoria:
+          <button class="btn btn-sm btn-outline-primary me-1 mb-1" *ngFor="let c of s.categoryCandidates" (click)="feedback(l.labelRaw, null, c.id)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-body border-success">
+      <h6 class="mb-2">Aggiungi riga</h6>
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-5">
+          <label class="form-label">Etichetta</label>
+          <input class="form-control" [value]="newLabel()" (input)="newLabel.set($any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Q.tà</label>
+          <input type="number" step="0.001" class="form-control" [value]="newQty()" (input)="newQty.set(+$any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Prezzo</label>
+          <input type="number" step="0.01" class="form-control" [value]="newUnitPrice()" (input)="newUnitPrice.set(+$any($event.target).value)" />
+        </div>
+        <div class="col-4 col-md-2">
+          <label class="form-label">Totale</label>
+          <input type="number" step="0.01" class="form-control" [value]="newLineTotal()" (input)="newLineTotal.set(+$any($event.target).value)" />
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label">IVA %</label>
+          <input type="number" step="0.01" class="form-control" [value]="newVat() || ''" (input)="newVat.set(+$any($event.target).value)" />
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Categoria</label>
+          <ng-select
+            [items]="catSugs()[-1] || []"
+            bindLabel="name"
+            bindValue="id"
+            [searchable]="true"
+            [clearable]="true"
+            [minTermLength]="2"
+            (search)="onCategorySearch(-1, $event.term); newCatName.set(($event.term||'').toString()); newCatId.set(undefined)"
+            [ngModel]="newCatId() || null"
+            (ngModelChange)="newCatId.set($event)">
+          </ng-select>
+          <div class="mt-1" *ngIf="!newCatId() && (newCatName()||'').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createCategory(-1)">Crea "{{ newCatName() }}"</button>
+          </div>
+        </div>
+        <div class="col-12 col-md-2 d-grid">
+          <label class="form-label invisible">Azione</label>
+          <button class="btn btn-success" (click)="addNewLine()">Aggiungi</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section *ngIf="imageUrl()">
+    <h5>Immagine scontrino</h5>
+    <img [src]="imageUrl()" alt="receipt" class="img-fluid rounded border"/>
+  </section>
+
+  <div *ngIf="error()" class="alert alert-danger mt-2">{{error()}}</div>
+</main>

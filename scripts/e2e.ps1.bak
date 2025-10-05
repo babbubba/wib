@@ -1,0 +1,33 @@
+Param()
+$ErrorActionPreference = 'Stop'
+
+Write-Host "[E2E] Starting stack via docker compose..."
+docker compose up -d
+
+Write-Host "[E2E] Waiting for services..."
+for ($i=0; $i -lt 30; $i++) {
+  try {
+    Invoke-WebRequest -UseBasicParsing http://localhost:8085/ml/health | Out-Null
+    break
+  } catch {
+    Start-Sleep -Seconds 2
+  }
+}
+
+Write-Host "[E2E] Smoke: auth + spending (should be empty array)"
+$from = Get-Date -Format yyyy-MM-01
+$to = Get-Date -Format yyyy-MM-dd
+$tokenResp = Invoke-WebRequest -UseBasicParsing http://localhost:8085/auth/token -Method Post -ContentType 'application/json' -Body '{"username":"admin","password":"admin"}'
+$token = ($tokenResp.Content | ConvertFrom-Json).accessToken
+Invoke-WebRequest -UseBasicParsing "http://localhost:8085/analytics/spending?from=$from&to=$to" -Headers @{ Authorization = "Bearer $token" }
+
+Write-Host "[E2E] Smoke: POST /receipts (expect 202)"
+$tmp = New-TemporaryFile
+Set-Content -Path $tmp -Value ([byte[]](1..128)) -Encoding Byte
+# Use curl.exe for multipart form upload (PowerShell 5.1 compatible)
+$code = curl.exe -s -o NUL -w "%{http_code}" -F "file=@$tmp;type=application/octet-stream" http://localhost:8085/receipts
+if ($code -ne "202") { throw "Upload failed: HTTP $code" }
+Write-Host "[E2E] Upload accepted (202)"
+
+Write-Host "[E2E] Done. Tail logs with: docker compose logs -f"
+

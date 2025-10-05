@@ -1,0 +1,74 @@
+using Microsoft.EntityFrameworkCore;
+using WIB.Application.Interfaces;
+using WIB.Application.Receipts;
+using WIB.Infrastructure.Clients;
+using WIB.Worker;
+using WIB.Infrastructure.Data;
+using WIB.Infrastructure.Storage;
+using WIB.Infrastructure.Queue;
+
+var builder = Host.CreateApplicationBuilder(args);
+// Endpoints (support both section keys and env fallbacks)
+var ocrEndpoint = builder.Configuration["Ocr:Endpoint"]
+                   ?? Environment.GetEnvironmentVariable("Ocr__Endpoint")
+                   ?? "http://localhost:8081";
+builder.Services.AddHttpClient<IOcrClient, OcrClient>(client => client.BaseAddress = new Uri(ocrEndpoint));
+var kieEndpoint = builder.Configuration["Kie:Endpoint"]
+                   ?? Environment.GetEnvironmentVariable("Kie__Endpoint")
+                   ?? ocrEndpoint;
+builder.Services.AddHttpClient<IKieClient, KieClient>(client => client.BaseAddress = new Uri(kieEndpoint));
+var mlEndpoint = builder.Configuration["Ml:Endpoint"]
+                  ?? Environment.GetEnvironmentVariable("Ml__Endpoint")
+                  ?? "http://localhost:8082";
+builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
+builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
+builder.Services.AddScoped<ProcessReceiptCommandHandler>();
+builder.Services.AddScoped<ReceiptProcessor>();
+builder.Services.AddHostedService<Worker>();
+
+var conn = builder.Configuration.GetConnectionString("Default")
+           ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+           ?? "Host=localhost;Database=wib;Username=wib;Password=wib";
+builder.Services.AddDbContext<WibDbContext>(options => options.UseNpgsql(conn));
+
+// MinIO options and storage
+builder.Services.Configure<MinioOptions>(builder.Configuration.GetSection("Minio"));
+builder.Services.AddSingleton<IImageStorage, MinioImageStorage>();
+
+// Redis queue (support section key and env fallback)
+var redisConn = builder.Configuration["Redis:Connection"]
+                 ?? builder.Configuration["Redis__Connection"]
+                 ?? Environment.GetEnvironmentVariable("Redis__Connection")
+                 // In Docker, prefer the service name by default
+                 ?? "redis:6379";
+builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisConn));
+
+var host = builder.Build();
+
+// Auto-migrate DB on startup (dev/local) con retry per dipendenze lente (DB)
+using (var scope = host.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<WibDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrap");
+    const int maxAttempts = 30;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+        try
+        {
+            db.Database.Migrate();
+            logger.LogInformation("Database migration successful");
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (attempt == maxAttempts)
+            {
+                logger.LogError(ex, "Database migration failed after {Attempts} attempts", maxAttempts);
+                throw;
+            }
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{Max}). Retrying...", attempt, maxAttempts);
+            await Task.Delay(2000);
+        }
+    }
+}
+host.Run();

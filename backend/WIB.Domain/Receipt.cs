@@ -1,0 +1,134 @@
+namespace WIB.Domain;
+
+public class Receipt
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StoreId { get; set; }
+    public Store? Store { get; set; }
+    public Guid? StoreLocationId { get; set; }
+    public StoreLocation? StoreLocation { get; set; }
+    public DateTimeOffset Date { get; set; }
+    public string Currency { get; set; } = "EUR";
+    public decimal? TaxTotal { get; set; }
+    public decimal Total { get; set; }
+    public string? RawText { get; set; }
+    public string? ImageObjectKey { get; set; }
+    public List<ReceiptLine> Lines { get; set; } = new();
+}
+
+public class ReceiptLine
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ReceiptId { get; set; }
+    public Receipt? Receipt { get; set; }
+    public Guid? ProductId { get; set; }
+    public Product? Product { get; set; }
+    public string LabelRaw { get; set; } = string.Empty;
+    public decimal Qty { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal { get; set; }
+    public decimal? VatRate { get; set; }
+    public Guid? PredictedTypeId { get; set; }
+    public Guid? PredictedCategoryId { get; set; }
+    public decimal? PredictionConfidence { get; set; }
+}
+
+public class Store
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string? Chain { get; set; }
+    public List<Receipt> Receipts { get; set; } = new();
+    public List<StoreLocation> Locations { get; set; } = new();
+}
+
+public class StoreLocation
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StoreId { get; set; }
+    public Store? Store { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public string? PostalCode { get; set; }
+    public string? VatNumber { get; set; }
+}
+
+public class Category
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public Guid? ParentId { get; set; }
+    public Category? Parent { get; set; }
+    public List<Category> Children { get; set; } = new();
+}
+
+public class ProductType
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string? AliasesJson { get; set; }
+}
+
+public class Product
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string? Brand { get; set; }
+    public string? GTIN { get; set; }
+    public Guid ProductTypeId { get; set; }
+    public ProductType? ProductType { get; set; }
+    public Guid? CategoryId { get; set; }
+    public Category? Category { get; set; }
+    public List<ProductAlias> Aliases { get; set; } = new();
+}
+
+public class ProductAlias
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
+    public string Alias { get; set; } = string.Empty;
+}
+
+public class PriceHistory
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
+    public Guid StoreId { get; set; }
+    public Store? Store { get; set; }
+    public DateTime Date { get; set; }
+    public decimal UnitPrice { get; set; }
+}
+
+public class BudgetMonth
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public decimal LimitAmount { get; set; }
+}
+
+public class ExpenseAggregate
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public Guid? StoreId { get; set; }
+    public Guid? CategoryId { get; set; }
+    public decimal Amount { get; set; }
+}
+
+public class LabelingEvent
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ProductId { get; set; }
+    public Product? Product { get; set; }
+    public string LabelRaw { get; set; } = string.Empty;
+    public Guid? PredictedTypeId { get; set; }
+    public Guid? PredictedCategoryId { get; set; }
+    public Guid FinalTypeId { get; set; }
+    public Guid? FinalCategoryId { get; set; }
+    public decimal Confidence { get; set; }
+    public DateTimeOffset WhenUtc { get; set; }
+}

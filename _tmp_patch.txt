@@ -1,0 +1,40 @@
+*** Begin Patch
+*** Update File: frontend/apps/wib-wmc/src/app/queue.component.ts
+@@
+ export class QueueComponent implements OnInit, OnDestroy {
+@@
+   selected = signal<Record<string, boolean>>({});
+   logs = signal<string[]>([]);
++  previews = signal<Record<string, string>>({});
+@@
+-    this.http.get<StorageList>(url, { params: p }).subscribe({
+-      next: (res) => { this.storeKeys.set(res.keys || []); },
++    this.http.get<StorageList>(url, { params: p }).subscribe({
++      next: (res) => {
++        const keys = res.keys || [];
++        // revoke previous blob URLs
++        const prev = this.previews();
++        Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u); } catch {} });
++        this.previews.set({});
++        this.storeKeys.set(keys);
++        keys.forEach(k => this.fetchPreview(k));
++      },
+       error: (e) => { if (!silent) console.error(e); }
+     });
+   }
+@@
+-  imgSrc(k: string) { return `/storage/object?objectKey=${encodeURIComponent(k)}`; }
++  // Preview helpers
++  fetchPreview(key: string) {
++    if (!key) return;
++    if (this.previews()[key]) return;
++    this.http.get(`/storage/object`, { params: { objectKey: key }, responseType: 'blob' as any }).subscribe({
++      next: (blob: any) => {
++        const url = URL.createObjectURL(blob);
++        this.previews.set({ ...this.previews(), [key]: url });
++      },
++      error: (e) => this.appendLog(`Preview failed for ${key}: ${e.message||e}`)
++    });
++  }
++  previewSrc(key: string) { return this.previews()[key] || ''; }
+*** End Patch

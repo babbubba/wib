@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/__pycache__/
+*.user
+*.swp
+node_modules/
+.data/
+.venv/
+.vs/
+.angular/
+dist/
+package-lock.json
