@@ -13,7 +13,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }
   return next(req).pipe(
     catchError((err: any) => {
-      const isAuthCall = req.url.includes('/auth/token');
+      const isAuthCall = req.url.includes('/api/auth/token');
       if (err instanceof HttpErrorResponse && err.status === 401 && !isAuthCall) {
         // token missing/expired or invalid; redirect to login preserving returnUrl
         const returnUrl = router.routerState.snapshot.url || '/';

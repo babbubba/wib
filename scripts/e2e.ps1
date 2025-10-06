@@ -31,6 +31,42 @@ $wmcOk = Test-Frontend 'http://localhost:4201/'
 $devOk = Test-Frontend 'http://localhost:4200/'
 if (-not ($wmcOk -and $devOk)) { throw "Frontend(s) not serving expected assets" }
 
+Write-Host "[E2E] Verifying WMC /api proxy returns JSON (not HTML)"
+$body = @{ username = "admin"; password = "admin" } | ConvertTo-Json
+try {
+  $loginWmc = Invoke-RestMethod -UseBasicParsing -Uri 'http://localhost:4201/api/auth/token' -Method Post -ContentType 'application/json' -Body $body
+  if (-not $loginWmc.accessToken) { throw "missing accessToken in response" }
+  $wToken = $loginWmc.accessToken
+} catch {
+  throw "WMC /api/auth/token failed or returned non-JSON: $($_.Exception.Message)"
+}
+
+$headers = @{ Authorization = "Bearer $wToken" }
+try {
+  $from = Get-Date -Format yyyy-MM-01
+  $to = Get-Date -Format yyyy-MM-dd
+  $spending = Invoke-RestMethod -UseBasicParsing -Uri "http://localhost:4201/api/analytics/spending?from=$from&to=$to" -Headers $headers -Method Get
+  if ($spending -is [string]) { throw "received string/HTML instead of JSON" }
+} catch {
+  throw "WMC /api/analytics/spending failed or returned non-JSON: $($_.Exception.Message)"
+}
+
+# Basic category search to ensure JSON via /api
+try {
+  $cats = Invoke-RestMethod -UseBasicParsing -Uri "http://localhost:4201/api/categories/search?query=lat&take=3" -Headers $headers -Method Get
+  if ($cats -is [string]) { throw "received string/HTML instead of JSON" }
+} catch {
+  Write-Warning "WMC /api/categories/search check skipped/failed: $($_.Exception.Message)"
+}
+
+# ML suggestions via /api
+try {
+  $ml = Invoke-RestMethod -UseBasicParsing -Uri "http://localhost:4201/api/ml/suggestions?labelRaw=latte" -Headers $headers -Method Get
+  if ($ml -is [string]) { throw "received string/HTML instead of JSON" }
+} catch {
+  Write-Warning "WMC /api/ml/suggestions check skipped/failed: $($_.Exception.Message)"
+}
+
 Write-Host "[E2E] Auth + protected call"
 $from = Get-Date -Format yyyy-MM-01
 $to = Get-Date -Format yyyy-MM-dd

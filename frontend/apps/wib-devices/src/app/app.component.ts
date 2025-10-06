@@ -42,7 +42,7 @@ export class AppComponent {
       const form = new FormData();
       const fname = this.fileName() || 'receipt.jpg';
       form.append('file', new File([blob], fname, { type: 'image/jpeg' }));
-      this.http.post(`/receipts`, form, { observe: 'events', reportProgress: true }).subscribe({
+      this.http.post(`/api/receipts`, form, { observe: 'events', reportProgress: true }).subscribe({
         next: (evt) => {
           if (evt.type === HttpEventType.UploadProgress && evt.total) {
             const pct = Math.round((evt.loaded / evt.total) * 100);

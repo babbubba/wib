@@ -1,8 +1,9 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { NgSelectModule } from '@ng-select/ng-select';
+import { ActivatedRoute } from '@angular/router';
 
 interface SpendingItem { year: number; month: number; amount: number; }
 interface ReceiptListItem { id: string; datetime: string; storeName?: string; total: number; }
@@ -16,7 +17,7 @@ interface Suggestions { typeCandidates: { id: string; conf: number }[]; category
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css'],
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnInit {
   from = signal<string>(this.iso(new Date(Date.now() - 30*24*60*60*1000)));
   to = signal<string>(this.iso(new Date()));
   items = signal<SpendingItem[]>([]);
@@ -38,7 +39,14 @@ export class DashboardComponent {
   storeSugs = signal<{ id: string; name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string }[]>([]);
   storeLoading = signal<boolean>(false);
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private route: ActivatedRoute) {}
+
+  ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.loadReceipt(id);
+    }
+  }
 
   iso(d: Date) { return d.toISOString().slice(0,10); }
 
@@ -47,7 +55,7 @@ export class DashboardComponent {
     const f = this.from();
     const t = this.to();
     this.error.set('');
-    this.http.get<SpendingItem[]>(`/analytics/spending`, { params: { from: f, to: t }}).subscribe({
+    this.http.get<SpendingItem[]>(`/api/analytics/spending`, { params: { from: f, to: t }}).subscribe({
       next: (arr) => this.items.set(arr),
       error: (e) => this.error.set(e.message || 'Errore')
     });
@@ -67,7 +75,7 @@ export class DashboardComponent {
       cur['categoryId'] = null;
       const q = (value || '').toString().trim();
       if (q.length >= 2) {
-        this.http.get<any[]>(`/categories/search`, { params: { query: q, take: 8 } }).subscribe({
+        this.http.get<any[]>(`/api/categories/search`, { params: { query: q, take: 8 } }).subscribe({
           next: (list) => {
             const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name }));
             const map = { ...this.catSugs() }; map[index] = sugg; this.catSugs.set(map);
@@ -88,7 +96,7 @@ export class DashboardComponent {
     cur['categoryId'] = null;
     arr[index] = cur; this.editLines.set(arr);
     if (q.length >= 2) {
-      this.http.get<any[]>(`/categories/search`, { params: { query: q, take: 8 } }).subscribe({
+      this.http.get<any[]>(`/api/categories/search`, { params: { query: q, take: 8 } }).subscribe({
         next: (list) => {
           const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name }));
           const map = { ...this.catSugs() }; map[index] = sugg; this.catSugs.set(map);
@@ -151,7 +159,7 @@ export class DashboardComponent {
     this.editStoreName.set(q);
     if (q.length < 2) { this.storeSugs.set([]); return; }
     this.storeLoading.set(true);
-    this.http.get<any[]>(`/stores/search`, { params: { query: q, take: 8 } }).subscribe({
+    this.http.get<any[]>(`/api/stores/search`, { params: { query: q, take: 8 } }).subscribe({
       next: (list) => {
         this.storeSugs.set((list||[]).map((x:any)=>({ id: x.id, name: x.name, address: x.address, city: x.city, postalCode: x.postalCode, vatNumber: x.vatNumber })));
         this.storeLoading.set(false);
@@ -173,7 +181,7 @@ export class DashboardComponent {
   removeLine(i: number) {
     const rec = this.selected(); if (!rec) return;
     const body = { lines: [{ index: i, remove: true }] } as any;
-    this.http.post(`/receipts/${rec.id}/edit`, body).subscribe({
+    this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({
       next: () => {
         // refresh selection
         this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any);
@@ -182,14 +190,14 @@ export class DashboardComponent {
     });
   }
   loadReceipts() {
-    this.http.get<ReceiptListItem[]>(`/receipts`, { params: { take: 10 } }).subscribe({
+    this.http.get<ReceiptListItem[]>(`/api/receipts`, { params: { take: 10 } }).subscribe({
       next: (arr) => this.receipts.set(arr),
       error: (e) => this.error.set(e.message || 'Errore')
     });
   }
 
   select(item: ReceiptListItem) {
-    this.http.get<ReceiptDto>(`/receipts/${item.id}`).subscribe({
+    this.http.get<ReceiptDto>(`/api/receipts/${item.id}`).subscribe({
       next: (r) => {
         this.selected.set(r);
         this.sugs.set({});
@@ -204,14 +212,36 @@ export class DashboardComponent {
       },
       error: (e) => this.error.set(e.message || "Errore")
     });
-    this.http.get(`/receipts/${item.id}/image`, { responseType: "blob" as any }).subscribe({
+    this.http.get(`/api/receipts/${item.id}/image`, { responseType: "blob" as any }).subscribe({
+      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); },
+      error: (e) => this.error.set(e.message || "Errore immagine")
+    });
+  }
+
+  private loadReceipt(id: string) {
+    this.http.get<ReceiptDto>(`/api/receipts/${id}`).subscribe({
+      next: (r) => {
+        this.selected.set(r);
+        this.sugs.set({});
+        this.editStoreName.set(r.store.name || "");
+        this.editDatetime.set(r.datetime ? new Date(r.datetime).toISOString().slice(0,16) : "");
+        this.editCurrency.set(r.currency || "EUR");
+        this.editStoreAddress.set(r.store.address || "");
+        this.editStoreCity.set(r.store.city || "");
+        this.editStorePostalCode.set(r.store.postalCode || "");
+        this.editStoreVatNumber.set(r.store.vatNumber || "");
+        this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, categoryName: l.categoryName || "", categoryId: l.categoryId || null })));
+      },
+      error: (e) => this.error.set(e.message || "Errore")
+    });
+    this.http.get(`/api/receipts/${id}/image`, { responseType: "blob" as any }).subscribe({
       next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); },
       error: (e) => this.error.set(e.message || "Errore immagine")
     });
   }
 
   suggest(labelRaw: string, idx: number) {
-    this.http.get<Suggestions>(`/ml/suggestions`, { params: { labelRaw } }).subscribe({
+    this.http.get<Suggestions>(`/api/ml/suggestions`, { params: { labelRaw } }).subscribe({
       next: (s) => this.sugs.set({ ...this.sugs(), [idx]: s }),
       error: (e) => this.error.set(e.message || 'Errore')
     });
@@ -221,7 +251,7 @@ export class DashboardComponent {
     const payload: any = { labelRaw };
     if (finalTypeId) payload.finalTypeId = finalTypeId;
     if (finalCategoryId) payload.finalCategoryId = finalCategoryId;
-    this.http.post(`/ml/feedback`, payload).subscribe({
+    this.http.post(`/api/ml/feedback`, payload).subscribe({
       next: () => {},
       error: (e) => this.error.set(e.message || 'Errore')
     });
@@ -249,7 +279,7 @@ export class DashboardComponent {
         finalCategoryName: (this.newCatName()||'').trim() || undefined,
       }]
     };
-    this.http.post(`/receipts/${rec.id}/edit`, body).subscribe({
+    this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({
       next: () => {
         this.newLabel.set(''); this.newQty.set(1); this.newUnitPrice.set(0); this.newLineTotal.set(0); this.newVat.set(null); this.newCatName.set(''); this.newCatId.set(undefined);
         this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any);

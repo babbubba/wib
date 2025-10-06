@@ -34,13 +34,13 @@ export class QueueComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void { if (this.timer) clearInterval(this.timer); }
 
   refresh(silent=false) {
-    this.http.get<QueueStatus>('/queue/status', { params: { take: this.take().toString() } }).subscribe({
+    this.http.get<QueueStatus>('/api/queue/status', { params: { take: this.take().toString() } }).subscribe({
       next: (s) => { this.length.set(s.length); this.pending.set(s.pending || []); },
       error: (e) => { if (!silent) console.error(e); }
     });
     const p: any = { take: String(Math.max(10, this.take())) };
     if (this.prefix()) p.prefix = this.prefix();
-    const url = this.unprocessedOnly() ? '/storage/receipts/unprocessed' : '/storage/receipts';
+    const url = this.unprocessedOnly() ? '/api/storage/receipts/unprocessed' : '/api/storage/receipts';
     this.http.get<StorageList>(url, { params: p }).subscribe({
       next: (res) => {
         const keys = res.keys || [];
@@ -55,14 +55,14 @@ export class QueueComponent implements OnInit, OnDestroy {
   }
 
   reprocessKey(k: string) {
-    this.http.post('/queue/reprocess', { objectKey: k }).subscribe({ next: () => { this.appendLog(`Enqueued ${k}`); this.refresh(true); }, error: (e)=> this.appendLog(`Failed ${k}: ${e.message||e}`) });
+    this.http.post('/api/queue/reprocess', { objectKey: k }).subscribe({ next: () => { this.appendLog(`Enqueued ${k}`); this.refresh(true); }, error: (e)=> this.appendLog(`Failed ${k}: ${e.message||e}`) });
   }
 
   reprocessObject(ev: Event) {
     ev.preventDefault();
     const k = this.objectKey().trim();
     if (!k) return;
-    this.http.post('/queue/reprocess', { objectKey: k }).subscribe({ next: () => { this.appendLog(`Enqueued ${k}`); this.objectKey.set(''); this.refresh(true); }, error: (e)=> this.appendLog(`Failed ${k}: ${e.message||e}`) });
+    this.http.post('/api/queue/reprocess', { objectKey: k }).subscribe({ next: () => { this.appendLog(`Enqueued ${k}`); this.objectKey.set(''); this.refresh(true); }, error: (e)=> this.appendLog(`Failed ${k}: ${e.message||e}`) });
   }
 
   toggleAll(ev: Event) {
@@ -75,7 +75,7 @@ export class QueueComponent implements OnInit, OnDestroy {
   bulkEnqueue() {
     const keys = Object.entries(this.selected()).filter(([,v])=>!!v).map(([k])=>k);
     if (!keys.length) return;
-    this.http.post('/storage/reprocess/bulk', { objectKeys: keys }).subscribe({
+    this.http.post('/api/storage/reprocess/bulk', { objectKeys: keys }).subscribe({
       next: (res: any) => { this.appendLog(`Enqueued ${res?.enqueued ?? keys.length} items`); this.refresh(true); },
       error: (e) => this.appendLog(`Bulk enqueue failed: ${e.message||e}`)
     });
@@ -114,7 +114,7 @@ export class QueueComponent implements OnInit, OnDestroy {
   fetchPreview(key: string) {
     if (!key) return;
     if (this.previews()[key]) return;
-    this.http.get('/storage/object', { params: { objectKey: key }, responseType: 'blob' as any }).subscribe({
+    this.http.get('/api/storage/object', { params: { objectKey: key }, responseType: 'blob' as any }).subscribe({
       next: (blob: any) => {
         const url = URL.createObjectURL(blob);
         this.previews.set({ ...this.previews(), [key]: url });

@@ -14,6 +14,8 @@ const routes: Routes = [
   { path: '', component: HomeComponent },
   { path: 'login', component: LoginComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  // Deep link to edit a specific receipt
+  { path: 'receipts/:id', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'queue', component: QueueComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: '' },
 ];

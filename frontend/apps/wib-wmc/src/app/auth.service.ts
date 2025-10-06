@@ -38,7 +38,7 @@ export class AuthService {
   }
 
   login(username: string, password: string): Observable<string> {
-    return this.http.post<LoginResponse>('/auth/token', { username, password }).pipe(
+    return this.http.post<LoginResponse>('/api/auth/token', { username, password }).pipe(
       map(r => (r?.accessToken || r?.AccessToken || r?.token || '') as string),
       tap(t => { if (t) this.setToken(t); })
     );
@@ -50,4 +50,3 @@ export class AuthService {
     this.router.navigate(['/login'], extras);
   }
 }
-

@@ -1,47 +1,8 @@
 {
-  "/auth": {
+  "/api": {
     "target": "http://localhost:8080",
     "secure": false,
-    "changeOrigin": true
-  },
-  "/receipts": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/analytics": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/ml": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/queue": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/storage": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/storage/object": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/categories": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/stores": {
-    "target": "http://localhost:8080",
-    "secure": false,
-    "changeOrigin": true
+    "changeOrigin": true,
+    "pathRewrite": { "^/api": "" }
   }
 }
