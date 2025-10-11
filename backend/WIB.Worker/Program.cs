@@ -6,6 +6,7 @@ using WIB.Worker;
 using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
+using WIB.Infrastructure.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 // Endpoints (support both section keys and env fallbacks)
@@ -22,6 +23,7 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
                   ?? "http://localhost:8082";
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
+builder.Services.AddScoped<INameMatcher, NameMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 builder.Services.AddScoped<ReceiptProcessor>();
 builder.Services.AddHostedService<Worker>();

@@ -34,6 +34,7 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
                   ?? "http://localhost:8082";
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
+builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.NameMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 
 var conn = builder.Configuration.GetConnectionString("Default") ??

@@ -8,15 +8,17 @@ public class ProcessReceiptCommandHandler
     private readonly IKieClient _kie;
     private readonly IProductClassifier _classifier;
     private readonly IReceiptStorage _storage;
+    private readonly INameMatcher _names;
     private readonly IImageStorage _imageStorage;
 
-    public ProcessReceiptCommandHandler(IOcrClient ocr, IKieClient kie, IProductClassifier classifier, IReceiptStorage storage, IImageStorage imageStorage)
+    public ProcessReceiptCommandHandler(IOcrClient ocr, IKieClient kie, IProductClassifier classifier, IReceiptStorage storage, IImageStorage imageStorage, INameMatcher names)
     {
         _ocr = ocr;
         _kie = kie;
         _classifier = classifier;
         _storage = storage;
         _imageStorage = imageStorage;
+        _names = names;
     }
 
     public async Task Handle(ProcessReceiptCommand command, CancellationToken ct)
@@ -37,9 +39,17 @@ public class ProcessReceiptCommandHandler
         var ocrResult = await _ocr.ExtractAsync(ms, ct);
         var kie = await _kie.ExtractFieldsAsync(ocrResult, ct);
 
+        // Try to normalize store name to an existing store
+        Guid? existingStoreId = null;
+        if (!string.IsNullOrWhiteSpace(kie.Store.Name))
+        {
+            var match = await _names.MatchStoreAsync(kie.Store.Name, ct);
+            if (match.HasValue) existingStoreId = match.Value.storeId;
+        }
+
         var receipt = new WIB.Domain.Receipt
         {
-            Store = new WIB.Domain.Store
+            Store = existingStoreId.HasValue ? null : new WIB.Domain.Store
             {
                 Name = kie.Store.Name,
                 Chain = kie.Store.Chain
@@ -51,6 +61,7 @@ public class ProcessReceiptCommandHandler
                 PostalCode = kie.Store.PostalCode,
                 VatNumber = kie.Store.VatNumber
             },
+            StoreId = existingStoreId ?? Guid.Empty,
             Date = kie.Datetime,
             Currency = kie.Currency,
             TaxTotal = kie.Totals.Tax,
@@ -68,10 +79,12 @@ public class ProcessReceiptCommandHandler
 
         foreach (var l in kie.Lines)
         {
+            var corrected = await _names.CorrectProductLabelAsync(l.LabelRaw, ct);
+            var labelRaw = corrected ?? l.LabelRaw;
             var (typeId, categoryId, confidence) = await _classifier.PredictAsync(l.LabelRaw, ct);
             receipt.Lines.Add(new WIB.Domain.ReceiptLine
             {
-                LabelRaw = l.LabelRaw,
+                LabelRaw = labelRaw,
                 Qty = l.Qty,
                 UnitPrice = l.UnitPrice,
                 LineTotal = l.LineTotal,
@@ -82,6 +95,12 @@ public class ProcessReceiptCommandHandler
                 PredictedCategoryId = categoryId,
                 PredictionConfidence = (decimal?)confidence
             });
+        }
+
+        // If we matched an existing store, make sure StoreLocation points to that StoreId
+        if (existingStoreId.HasValue && receipt.StoreLocation != null)
+        {
+            receipt.StoreLocation.StoreId = existingStoreId.Value;
         }
 
         // TODO: classificazione prodotti e popolamento ProductId

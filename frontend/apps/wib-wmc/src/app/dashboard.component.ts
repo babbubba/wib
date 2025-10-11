@@ -26,6 +26,7 @@ export class DashboardComponent implements OnInit {
   selected = signal<ReceiptDto | null>(null);
   sugs = signal<Record<number, Suggestions>>({});
   imageUrl = signal<string>("" as string);
+  deleting = signal<boolean>(false);
   // edit state
   editStoreName = signal<string>("");
   editStoreAddress = signal<string>("");
@@ -319,5 +320,22 @@ export class DashboardComponent implements OnInit {
       next: () => { this.error.set(""); this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any); },
       error: (e) => this.error.set(e.message || 'Salvataggio fallito')
     })
+  }
+
+  deleteSelected() {
+    const rec = this.selected(); if (!rec || this.deleting()) return;
+    const ok = confirm('Eliminare definitivamente lo scontrino selezionato?');
+    if (!ok) return;
+    this.deleting.set(true);
+    this.http.delete(`/api/receipts/${rec.id}`).subscribe({
+      next: () => {
+        // cleanup state and reload list
+        if (this.imageUrl()) { URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(''); }
+        this.selected.set(null);
+        this.loadReceipts();
+        this.deleting.set(false);
+      },
+      error: (e) => { this.error.set(e.message || 'Eliminazione scontrino fallita'); this.deleting.set(false); }
+    });
   }
 }

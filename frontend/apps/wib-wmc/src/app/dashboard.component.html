@@ -34,8 +34,13 @@
   </section>
 
   <section *ngIf="selected() as rec" class="mb-3">
-    <h5>Review / Modifica</h5>
-    <div class="card card-body mb-3">
+    <h5 class="d-flex justify-content-between align-items-center">
+      <span>Review / Modifica</span>
+      <button class="btn btn-outline-danger btn-sm" (click)="deleteSelected()" [disabled]="deleting()">Elimina scontrino</button>
+    </h5>
+    <div class="row">
+      <div class="col-12 col-lg-7">
+        <div class="card card-body mb-3">
       <div class="row g-2 align-items-center">
         <div class="col-12 col-md-4">
           <label class="form-label">Negozio</label>
@@ -89,8 +94,8 @@
           <input class="form-control" [value]="editStoreVatNumber()" (input)="editStoreVatNumber.set($any($event.target).value)" />
         </div>
       </div>
-    </div>
-    <div *ngFor="let l of rec.lines; let i = index" class="card card-body mb-2">
+        </div>
+        <div *ngFor="let l of rec.lines; let i = index" class="card card-body mb-2">
       <div class="row g-2 align-items-end">
         <div class="col-12 col-md-6 position-relative">
           <label class="form-label">Etichetta</label>
@@ -145,9 +150,9 @@
           <button class="btn btn-sm btn-outline-primary me-1 mb-1" *ngFor="let c of s.categoryCandidates" (click)="feedback(l.labelRaw, null, c.id)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
         </div>
       </div>
-    </div>
+        </div>
 
-    <div class="card card-body border-success">
+        <div class="card card-body border-success">
       <h6 class="mb-2">Aggiungi riga</h6>
       <div class="row g-2 align-items-end">
         <div class="col-12 col-md-5">
@@ -192,13 +197,17 @@
           <button class="btn btn-success" (click)="addNewLine()">Aggiungi</button>
         </div>
       </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <section *ngIf="imageUrl()">
+          <h6>Immagine scontrino</h6>
+          <img [src]="imageUrl()" alt="receipt" class="img-fluid rounded border"/>
+        </section>
+      </div>
     </div>
   </section>
 
-  <section *ngIf="imageUrl()">
-    <h5>Immagine scontrino</h5>
-    <img [src]="imageUrl()" alt="receipt" class="img-fluid rounded border"/>
-  </section>
 
   <div *ngIf="error()" class="alert alert-danger mt-2">{{error()}}</div>
 </main>

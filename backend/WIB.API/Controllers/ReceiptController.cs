@@ -155,4 +155,60 @@ public class ReceiptController : ControllerBase
         return File(stream, "image/jpeg");
     }
 
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var receipt = await _db.Receipts
+            .Include(r => r.Lines)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (receipt == null) return NotFound();
+
+        var storeId = receipt.StoreId;
+        var day = receipt.Date.UtcDateTime.Date;
+        var affectedProducts = receipt.Lines.Where(l => l.ProductId.HasValue).Select(l => l.ProductId!.Value).Distinct().ToList();
+        var imageKey = receipt.ImageObjectKey;
+
+        _db.Receipts.Remove(receipt);
+        await _db.SaveChangesAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(imageKey))
+        {
+            try { await _imageStorage.DeleteAsync(imageKey!, ct); } catch { /* ignore */ }
+        }
+
+        if (affectedProducts.Count > 0 && storeId != Guid.Empty)
+        {
+            foreach (var pid in affectedProducts)
+            {
+                var query = from rl in _db.ReceiptLines.AsNoTracking()
+                            join r in _db.Receipts.AsNoTracking() on rl.ReceiptId equals r.Id
+                            where rl.ProductId == pid && r.StoreId == storeId && r.Date.UtcDateTime.Date == day
+                            select new { rl.UnitPrice, rl.PricePerKg };
+                var list = await query.ToListAsync(ct);
+                var minUnit = list.Count > 0 ? list.Min(x => x.UnitPrice) : (decimal?)null;
+                var minPpk = list.Where(x => x.PricePerKg.HasValue).Select(x => x.PricePerKg!.Value).DefaultIfEmpty().Min();
+                var existing = await _db.PriceHistories.FirstOrDefaultAsync(ph => ph.ProductId == pid && ph.StoreId == storeId && ph.Date == day, ct);
+                if (minUnit == null)
+                {
+                    if (existing != null) _db.PriceHistories.Remove(existing);
+                }
+                else
+                {
+                    if (existing == null)
+                    {
+                        _db.PriceHistories.Add(new WIB.Domain.PriceHistory { ProductId = pid, StoreId = storeId, Date = day, UnitPrice = minUnit.Value, PricePerKg = minPpk == 0 ? null : minPpk });
+                    }
+                    else
+                    {
+                        existing.UnitPrice = minUnit.Value;
+                        existing.PricePerKg = minPpk == 0 ? null : minPpk;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
+    }
+
 }
