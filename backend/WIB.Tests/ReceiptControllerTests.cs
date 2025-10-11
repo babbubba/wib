@@ -14,6 +14,9 @@ public class ReceiptControllerTests
     {
         public Task EnqueueAsync(string objectKey, CancellationToken ct) => Task.CompletedTask;
         public Task<string?> TryDequeueAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task<long> GetLengthAsync(CancellationToken ct) => Task.FromResult(0L);
+        public Task<IReadOnlyList<string>> PeekAsync(int take, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>(new List<string>());
     }
     private sealed class StubImages : IImageStorage
     {
@@ -54,4 +57,3 @@ public class ReceiptControllerTests
         Assert.Equal("EUR", (string)dto.Currency);
     }
 }
-

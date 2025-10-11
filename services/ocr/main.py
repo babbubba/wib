@@ -7,6 +7,9 @@ from typing import List, Optional, Tuple
 
 app = FastAPI()
 
+OCR_STUB_ENABLED = os.getenv("OCR_STUB", "true").lower() == "true"
+OCR_STUB_TEXT = os.getenv("OCR_STUB_TEXT", "mock-ocr")
+
 # --- KIE engine wiring (PP-Structure / Donut) ---
 
 class KieEngine:
@@ -85,9 +88,15 @@ def health():
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
     data = await file.read()
+    if OCR_STUB_ENABLED:
+        return JSONResponse({"text": OCR_STUB_TEXT})
     if not data:
         return JSONResponse({"text": ""})
     text = ocr_text(data)
+    if not text.strip():
+        if OCR_STUB_ENABLED and OCR_STUB_TEXT:
+            return JSONResponse({"text": OCR_STUB_TEXT})
+        return JSONResponse({"text": ""})
     return JSONResponse({"text": text})
 
 
