@@ -1,8 +1,11 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using WIB.Application.Contracts.Receipts;
+using WIB.Application.Interfaces;
 using WIB.Infrastructure.Data;
 
 namespace WIB.API.Controllers;
@@ -13,10 +16,12 @@ namespace WIB.API.Controllers;
 public class ReceiptEditController : ControllerBase
 {
     private readonly WibDbContext _db;
+    private readonly IProductClassifier _classifier;
 
-    public ReceiptEditController(WibDbContext db)
+    public ReceiptEditController(WibDbContext db, IProductClassifier classifier)
     {
         _db = db;
+        _classifier = classifier;
     }
 
     [HttpPost("{id:guid}/edit")]
@@ -27,7 +32,10 @@ public class ReceiptEditController : ControllerBase
             .Include(r => r.StoreLocation)
             .Include(r => r.Lines)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (receipt == null) return NotFound();
+        if (receipt == null)
+            return NotFound();
+
+        var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
 
         if (!string.IsNullOrWhiteSpace(body.StoreName))
         {
@@ -41,38 +49,59 @@ public class ReceiptEditController : ControllerBase
                 _db.Stores.Add(store);
                 await _db.SaveChangesAsync(ct);
             }
+
             receipt.StoreId = store.Id;
             receipt.Store = store;
         }
 
-        if (body.Datetime.HasValue) receipt.Date = body.Datetime.Value;
-        if (!string.IsNullOrWhiteSpace(body.Currency)) receipt.Currency = body.Currency!;
-        // Optional store fields -> upsert a StoreLocation linked to this store
-        if (!string.IsNullOrWhiteSpace(body.StoreAddress) || !string.IsNullOrWhiteSpace(body.StoreCity) || !string.IsNullOrWhiteSpace(body.StorePostalCode) || !string.IsNullOrWhiteSpace(body.StoreVatNumber))
+        if (body.Datetime.HasValue)
+            receipt.Date = body.Datetime.Value;
+
+        if (!string.IsNullOrWhiteSpace(body.Currency))
+            receipt.Currency = body.Currency!;
+
+        if (!string.IsNullOrWhiteSpace(body.StoreAddress)
+            || !string.IsNullOrWhiteSpace(body.StoreCity)
+            || !string.IsNullOrWhiteSpace(body.StorePostalCode)
+            || !string.IsNullOrWhiteSpace(body.StoreVatNumber))
         {
             var addr = body.StoreAddress?.Trim();
             var city = body.StoreCity?.Trim();
             var cap = body.StorePostalCode?.Trim();
             var vat = body.StoreVatNumber?.Trim();
-            var loc = await _db.StoreLocations.FirstOrDefaultAsync(sl => sl.StoreId == receipt.StoreId && sl.Address == addr && sl.City == city && sl.PostalCode == cap, ct);
-            if (loc == null)
+
+            var existingLocation = await _db.StoreLocations.FirstOrDefaultAsync(
+                sl => sl.StoreId == receipt.StoreId
+                    && sl.Address == addr
+                    && sl.City == city
+                    && sl.PostalCode == cap,
+                ct);
+
+            if (existingLocation == null)
             {
-                loc = new WIB.Domain.StoreLocation { StoreId = receipt.StoreId, Address = addr, City = city, PostalCode = cap, VatNumber = vat };
-                _db.StoreLocations.Add(loc);
+                existingLocation = new WIB.Domain.StoreLocation
+                {
+                    StoreId = receipt.StoreId,
+                    Address = addr,
+                    City = city,
+                    PostalCode = cap,
+                    VatNumber = vat
+                };
+                _db.StoreLocations.Add(existingLocation);
                 await _db.SaveChangesAsync(ct);
             }
-            else
+            else if (!string.IsNullOrWhiteSpace(vat))
             {
-                if (!string.IsNullOrWhiteSpace(vat)) loc.VatNumber = vat;
+                existingLocation.VatNumber = vat;
             }
-            receipt.StoreLocationId = loc.Id;
-            receipt.StoreLocation = loc;
+
+            receipt.StoreLocationId = existingLocation.Id;
+            receipt.StoreLocation = existingLocation;
         }
 
         if (body.Lines != null && body.Lines.Count > 0)
         {
             var arr = receipt.Lines.OrderBy(l => l.Id).ToList();
-            // Apply removals first (descending by index) to avoid shifting
             var removals = body.Lines.Where(p => p.Remove == true).OrderByDescending(p => p.Index).ToList();
             foreach (var rm in removals)
             {
@@ -86,20 +115,50 @@ public class ReceiptEditController : ControllerBase
 
             foreach (var patch in body.Lines.Where(p => p.Remove != true))
             {
-                if (patch.Index < 0 || patch.Index >= arr.Count) continue;
+                if (patch.Index < 0 || patch.Index >= arr.Count)
+                    continue;
+
                 var line = arr[patch.Index];
-                if (!string.IsNullOrWhiteSpace(patch.LabelRaw)) line.LabelRaw = patch.LabelRaw!.Trim();
-                if (patch.Qty.HasValue) line.Qty = patch.Qty.Value;
-                if (patch.UnitPrice.HasValue) line.UnitPrice = patch.UnitPrice.Value;
-                if (patch.LineTotal.HasValue) line.LineTotal = patch.LineTotal.Value;
-                if (patch.VatRate.HasValue) line.VatRate = patch.VatRate.Value;
+                var originalLabel = line.LabelRaw;
+                var lineTouched = false;
+
+                if (!string.IsNullOrWhiteSpace(patch.LabelRaw))
+                {
+                    var updated = patch.LabelRaw.Trim();
+                    if (!string.Equals(updated, originalLabel, StringComparison.Ordinal))
+                    {
+                        line.LabelRaw = updated;
+                        lineTouched = true;
+                    }
+                }
+
+                if (patch.Qty.HasValue)
+                {
+                    line.Qty = patch.Qty.Value;
+                    lineTouched = true;
+                }
+
+                if (patch.UnitPrice.HasValue)
+                {
+                    line.UnitPrice = patch.UnitPrice.Value;
+                    lineTouched = true;
+                }
+
+                if (patch.LineTotal.HasValue)
+                {
+                    line.LineTotal = patch.LineTotal.Value;
+                    lineTouched = true;
+                }
+
+                if (patch.VatRate.HasValue)
+                    line.VatRate = patch.VatRate.Value;
 
                 if (patch.FinalCategoryId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
                 {
                     Guid? catId = patch.FinalCategoryId;
                     if (!catId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
                     {
-                        var cname = patch.FinalCategoryName!.Trim();
+                        var cname = patch.FinalCategoryName.Trim();
                         var clower = cname.ToLowerInvariant();
                         var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
                         if (cat == null)
@@ -111,17 +170,26 @@ public class ReceiptEditController : ControllerBase
                         }
                         catId = cat.Id;
                     }
+
                     if (catId.HasValue)
                     {
-                        // Avoid creating Product without ProductType; set category as confirmed on line
                         line.PredictedCategoryId = catId;
                         line.PredictionConfidence = 1.0m;
+                        lineTouched = true;
+                    }
+                }
+
+                if (lineTouched && line.PredictedCategoryId.HasValue)
+                {
+                    var typeId = line.PredictedTypeId ?? line.Product?.ProductTypeId;
+                    if (typeId.HasValue)
+                    {
+                        feedbackTargets.Add((line.LabelRaw, typeId.Value, line.PredictedCategoryId.Value));
                     }
                 }
             }
         }
 
-        // Add new lines if provided
         if (body.AddLines != null && body.AddLines.Count > 0)
         {
             foreach (var add in body.AddLines)
@@ -129,7 +197,7 @@ public class ReceiptEditController : ControllerBase
                 Guid? catId = add.FinalCategoryId;
                 if (!catId.HasValue && !string.IsNullOrWhiteSpace(add.FinalCategoryName))
                 {
-                    var cname = add.FinalCategoryName!.Trim();
+                    var cname = add.FinalCategoryName.Trim();
                     var clower = cname.ToLowerInvariant();
                     var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
                     if (cat == null)
@@ -141,6 +209,7 @@ public class ReceiptEditController : ControllerBase
                     }
                     catId = cat.Id;
                 }
+
                 var newLine = new WIB.Domain.ReceiptLine
                 {
                     LabelRaw = add.LabelRaw.Trim(),
@@ -152,14 +221,29 @@ public class ReceiptEditController : ControllerBase
                     PredictedCategoryId = catId,
                     PredictionConfidence = catId.HasValue ? 1.0m : null
                 };
+
                 receipt.Lines.Add(newLine);
+
+                if (catId.HasValue)
+                {
+                    var typeId = newLine.PredictedTypeId ?? newLine.Product?.ProductTypeId;
+                    if (typeId.HasValue)
+                    {
+                        feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
+                    }
+                }
             }
         }
 
-        // Recompute receipt total if lines changed
         receipt.Total = receipt.Lines.Sum(x => x.LineTotal);
 
         await _db.SaveChangesAsync(ct);
+
+        foreach (var target in feedbackTargets)
+        {
+            await _classifier.FeedbackAsync(target.Label, null, target.TypeId, target.CategoryId, ct);
+        }
+
         return NoContent();
     }
 }

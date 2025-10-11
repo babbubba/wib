@@ -31,6 +31,9 @@ public class ReceiptDraftLine
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    // Opzionali: solo per prodotti a peso
+    public decimal? WeightKg { get; set; }
+    public decimal? PricePerKg { get; set; }
 }
 
 public class ReceiptDraftTotals

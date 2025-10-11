@@ -28,6 +28,9 @@ public class ReceiptLine
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    // Peso e prezzo al Kg quando disponibili
+    public decimal? WeightKg { get; set; }
+    public decimal? PricePerKg { get; set; }
     public Guid? PredictedTypeId { get; set; }
     public Guid? PredictedCategoryId { get; set; }
     public decimal? PredictionConfidence { get; set; }
@@ -99,6 +102,7 @@ public class PriceHistory
     public Store? Store { get; set; }
     public DateTime Date { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal? PricePerKg { get; set; }
 }
 
 public class BudgetMonth

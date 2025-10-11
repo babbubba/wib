@@ -1,5 +1,0 @@
-services:
-  ocr:
-    environment:
-      OCR_STUB: "false"
-      OCR_STUB_TEXT: ""

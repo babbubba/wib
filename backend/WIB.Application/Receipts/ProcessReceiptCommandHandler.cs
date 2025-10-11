@@ -76,6 +76,8 @@ public class ProcessReceiptCommandHandler
                 UnitPrice = l.UnitPrice,
                 LineTotal = l.LineTotal,
                 VatRate = l.VatRate,
+                WeightKg = l.WeightKg,
+                PricePerKg = l.PricePerKg,
                 PredictedTypeId = typeId,
                 PredictedCategoryId = categoryId,
                 PredictionConfidence = (decimal?)confidence

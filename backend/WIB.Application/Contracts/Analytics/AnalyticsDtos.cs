@@ -13,5 +13,5 @@ public class PriceHistoryPointDto
 {
     public DateTime Date { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal? PricePerKg { get; set; }
 }
-

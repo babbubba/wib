@@ -57,7 +57,7 @@ public class AnalyticsController : ControllerBase
             q = q.Where(p => p.StoreId == storeId.Value);
 
         var points = await q.OrderBy(p => p.Date)
-            .Select(p => new PriceHistoryPointDto { Date = p.Date, UnitPrice = p.UnitPrice })
+            .Select(p => new PriceHistoryPointDto { Date = p.Date, UnitPrice = p.UnitPrice, PricePerKg = p.PricePerKg })
             .ToListAsync(ct);
         return Ok(points);
     }

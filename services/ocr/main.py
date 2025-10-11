@@ -1,4 +1,4 @@
-import os
+﻿import os
 import base64
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -7,8 +7,9 @@ from typing import List, Optional, Tuple
 
 app = FastAPI()
 
-OCR_STUB_ENABLED = os.getenv("OCR_STUB", "true").lower() == "true"
-OCR_STUB_TEXT = os.getenv("OCR_STUB_TEXT", "mock-ocr")
+OCR_STUB_ENABLED = os.getenv("OCR_STUB", "false").lower() == "true"
+temp_stub_text = os.getenv("OCR_STUB_TEXT")
+OCR_STUB_TEXT = temp_stub_text if temp_stub_text is not None else "mock-ocr"
 
 # --- KIE engine wiring (PP-Structure / Donut) ---
 
@@ -88,16 +89,16 @@ def health():
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
     data = await file.read()
-    if OCR_STUB_ENABLED:
+    if OCR_STUB_ENABLED and OCR_STUB_TEXT:
         return JSONResponse({"text": OCR_STUB_TEXT})
     if not data:
         return JSONResponse({"text": ""})
-    text = ocr_text(data)
-    if not text.strip():
-        if OCR_STUB_ENABLED and OCR_STUB_TEXT:
+    text_value = ocr_text(data)
+    if not text_value.strip():
+        if OCR_STUB_TEXT:
             return JSONResponse({"text": OCR_STUB_TEXT})
         return JSONResponse({"text": ""})
-    return JSONResponse({"text": text})
+    return JSONResponse({"text": text_value})
 
 
 class KieRequest(BaseModel):
@@ -191,11 +192,54 @@ def ocr_text(image_bytes: bytes) -> str:
                 import cv2  # type: ignore
                 arr = np.array(img)
                 arr = cv2.fastNlMeansDenoising(arr, h=10)
-                thr = cv2.adaptiveThreshold(arr, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                            cv2.THRESH_BINARY, 31, 10)
+                thr = cv2.adaptiveThreshold(
+                    arr,
+                    255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY,
+                    31,
+                    10,
+                )
                 img = Image.fromarray(thr)
             except Exception:
                 pass
+
+            # Prefer structured output to preserve visual row order
+            try:
+                data = pytesseract.image_to_data(
+                    img, output_type=pytesseract.Output.DICT, config="--oem 3 --psm 6"
+                )
+                n = len(data.get("text", []))
+                rows: dict[tuple[int, int, int], dict] = {}
+                for i in range(n):
+                    txt = (data["text"][i] or "").strip()
+                    if not txt:
+                        continue
+                    key = (data.get("block_num", [0])[i], data.get("par_num", [0])[i], data.get("line_num", [0])[i])
+                    entry = rows.get(key)
+                    if entry is None:
+                        entry = {
+                            "top": int(data.get("top", [0])[i] or 0),
+                            "left": int(data.get("left", [0])[i] or 0),
+                            "words": [],
+                        }
+                        rows[key] = entry
+                    entry["top"] = min(entry["top"], int(data.get("top", [0])[i] or 0))
+                    entry["words"].append((int(data.get("left", [0])[i] or 0), txt))
+                if rows:
+                    ordered = sorted(rows.values(), key=lambda r: r["top"])  # top-to-bottom
+                    lines_out: list[str] = []
+                    for r in ordered:
+                        words = sorted(r["words"], key=lambda w: w[0])  # left-to-right
+                        line = " ".join(w for _, w in words)
+                        line = clean_line(line)
+                        if line:
+                            lines_out.append(line)
+                    return "\n".join(lines_out)
+            except Exception:
+                # Fallback to plain text if structured data fails
+                pass
+
             text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
             return text
     except Exception:
@@ -225,6 +269,8 @@ def parse_text(text: str) -> dict:
                 "unitPrice": float(it["unit"]),
                 "lineTotal": float(it["total"]),
                 "vatRate": float(it["vat"]) if it.get("vat") is not None else None,
+                "weightKg": float(it["weightKg"]) if it.get("weightKg") is not None else None,
+                "pricePerKg": float(it["pricePerKg"]) if it.get("pricePerKg") is not None else None,
             }
             for it in items
         ],
@@ -296,6 +342,7 @@ def infer_vat(lines: list[str]) -> Optional[str]:
 
 def parse_number(s: str) -> Optional[float]:
     s = s.strip()
+    s = s.replace("S", "5").replace("s", "5")
     # Convert common European decimals like 1,23 to 1.23
     s = s.replace("€", "").replace("", "")
     # If both comma and dot, assume comma is thousand sep
@@ -308,6 +355,38 @@ def parse_number(s: str) -> Optional[float]:
         return float(re.findall(r"-?\d+(?:\.\d+)?", s)[-1])
     except Exception:
         return None
+
+# Override with a more robust EU/IT parser to avoid decimal-separator mistakes
+def _parse_number_eu(s: str) -> Optional[float]:
+    if s is None:
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    s = s.replace("S", "5").replace("s", "5")
+    s = re.sub(r"[€$£]\s?", "", s)
+    s = s.replace("\u00A0", " ")
+    s = s.replace("'", "")
+    s = re.sub(r"\s+", "", s)
+    if "," in s and "." in s:
+        last_comma = s.rfind(",")
+        last_dot = s.rfind(".")
+        if last_comma > last_dot:
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+    m = re.findall(r"-?\d+(?:\.\d+)?", s)
+    if not m:
+        return None
+    try:
+        return float(m[-1])
+    except Exception:
+        return None
+
+# Rebind global name so all uses go through the robust implementation
+parse_number = _parse_number_eu
 
 
 def infer_datetime(lines: list[str]) -> Optional[str]:
@@ -335,54 +414,214 @@ def infer_currency(text: str) -> str:
     return "EUR"
 
 
+
+def _strip_vat_tokens(label: str, existing: Optional[float] = None) -> Tuple[str, Optional[float]]:
+    # Capture percentages like "22%" and patterns like "IVA 22", "I.V.A. 10%", "Aliq 4".
+    pct_pattern = re.compile(r"(\d{1,2}(?:[\.,]\d+)?%)")
+    iva_pattern = re.compile(
+        r"((?:\bIVA\b|\bI\.?V\.?A\.?\b|\bALIQ(?:UOTA)?\b)[^\d%]{0,10})(\d{1,2}(?:[\.,]\d+)?)(%?)",
+        re.I,
+    )
+    vat_value = existing
+    cleaned = label
+
+    # First, handle explicit percentages
+    for match in pct_pattern.findall(label):
+        val = parse_number(match.replace('%', ''))
+        if val is not None and 0 < val <= 24:
+            vat_value = val
+            cleaned = cleaned.replace(match, ' ')
+
+    # Then, handle tokens preceded by IVA/ALIQ with optional percent sign
+    for m in iva_pattern.finditer(cleaned):
+        num = m.group(2)
+        val = parse_number(num)
+        if val is not None and 0 < val <= 24:
+            vat_value = val
+            cleaned = cleaned.replace(m.group(0), ' ')
+
+    return re.sub(r"\s+", " ", cleaned).strip(), vat_value
+
+
+def _parse_weight_line(line: str) -> Optional[dict[str, float]]:
+    weight_re = re.compile(r"(?P<weight>\d+(?:[\.,]\d+)?)\s*(kg|kgs|kil?o|hg|ett|g|gr|grammi)\b", re.I)
+    match = weight_re.search(line)
+    if not match:
+        return None
+    weight = parse_number(match.group('weight'))
+    if weight is None:
+        return None
+    unit_str = match.group(2).lower()
+    if unit_str.startswith('g'):
+        weight = weight / 1000.0
+    elif unit_str.startswith('hg') or 'ett' in unit_str:
+        weight = weight / 10.0
+    price_re = re.compile(r"(?P<unit>\d+[\.,]\d+)\s*(?:€|eur)?\s*(?:/|al)?\s*(?:kg|hg|g)\b", re.I)
+    price_match = price_re.search(line)
+    if not price_match:
+        price_match = re.search(r"[x@]\s*(?P<unit>\d+[\.,]\d+)", line, re.I)
+    price_per_unit = parse_number(price_match.group('unit')) if price_match else None
+    totals = [parse_number(m.group()) for m in re.finditer(r"\d+[\.,]\d{2}", line)]
+    totals = [t for t in totals if t is not None]
+    total_value = totals[-1] if totals else None
+    return {
+        'weight': weight,
+        'price_per_unit': price_per_unit,
+        'total': total_value,
+    }
+
+
+def _remove_weight_tokens(label: str) -> str:
+    return re.sub(r"\b\d+(?:[\.,]\d+)?\s*(?:kg|kgs|kil?o|hg|ett|g|gr|grammi)\b", ' ', label, flags=re.I).strip()
+
+
 def infer_items(lines: list[str]) -> list[dict]:
     items: list[dict] = []
-    price_re = re.compile(r"(?P<val>-?\d+[\.,]\d{2})")
-    qty_x_price_re = re.compile(r"(?P<label>.+?)\s+(?P<qty>\d+(?:[\.,]\d+)?)\s*[xX]\s*(?P<Unit>-?\d+[\.,]\d{2})\s+(?P<tot>-?\d+[\.,]\d{2})(?:.*?(?P<vat>\d{1,2}(?:[\.,]\d+)?%))?$")
+    visited: set[int] = set()
+    price_only_re = re.compile(r"^\s*(?:€|EUR)?\s*(-?\d+[\.,]\d{2})\s*$", re.I)
+    qty_x_price_re = re.compile(r"(?P<label>.+?)\s+(?P<qty>\d+(?:[\.,]\d+)?)\s*[xX]\s*(?P<unit>-?\d+[\.,]\d{2})\s+(?P<tot>-?\d+[\.,]\d{2})(?:.*?(?P<vat>\d{1,2}(?:[\.,]\d+)?%))?$")
     label_price_re = re.compile(r"(?P<label>.+?)\s+(?P<tot>-?\d+[\.,]\d{2})(?:.*?(?P<vat>\d{1,2}(?:[\.,]\d+)?%))?$")
     blacklist_re = re.compile(r"\b(TOTALE\s+COMPLESSIVO|TOTALE\s+EURO|TOTALE|SUBTOTALE|PAGAMENTO|RESTO|SCONTO|BANCOMAT|CARTA\s+DI\s+CREDITO|CONTANTI|ARTICOLI|IMPORTO|CASSA)\b", re.I)
-    for l in lines:
-        l2 = l
-        # skip obvious non-product headers (totali/pagamenti)
-        if re.search(r"TOTALE|TOTAL|SUBTOTAL|PAGAMENTO|CONTANTE|CONTANTI|IMPORTO PAGATO|RESTO", l2, re.I) or blacklist_re.search(l2):
+    price_fallback = re.compile(r"(?P<val>-?\d+[\.,]\d{2})")
+    count = len(lines)
+    i = 0
+    while i < count:
+        if i in visited:
+            i += 1
             continue
-        m = qty_x_price_re.search(l2)
+        raw = lines[i]
+        if not raw:
+            i += 1
+            continue
+        text_line = raw.strip()
+        if not text_line or blacklist_re.search(text_line):
+            i += 1
+            continue
+        qty = None
+        unit_price = None
+        total = None
+        vat = None
+        label = None
+        matched = False
+        m = qty_x_price_re.match(text_line)
         if m:
-            qty = parse_number(m.group("qty")) or 1.0
-            unit = parse_number(m.group("Unit")) or 0.0
-            tot = parse_number(m.group("tot")) or (qty * unit)
-            label = m.group("label").strip()
-            vat = None
-            if m.group("vat"):
-                vat = parse_number(m.group("vat").replace('%',''))
-            if tot is not None:
-                items.append({"label": label, "qty": qty, "unit": unit or (tot / max(qty, 1)), "total": tot, "vat": vat})
+            matched = True
+            label = m.group('label').strip()
+            qty = parse_number(m.group('qty')) or 1.0
+            unit_price = parse_number(m.group('unit'))
+            total = parse_number(m.group('tot'))
+            vat = parse_number(m.group('vat').replace('%', '')) if m.group('vat') else None
+        else:
+            m2 = label_price_re.match(text_line)
+            if m2:
+                matched = True
+                label = m2.group('label').strip()
+                total = parse_number(m2.group('tot'))
+                qty = 1.0
+                unit_price = total
+                vat = parse_number(m2.group('vat').replace('%', '')) if m2.group('vat') else None
+        if not matched:
+            prices = list(price_fallback.finditer(text_line))
+            if prices:
+                potential_total = parse_number(prices[-1].group('val'))
+                label_candidate = text_line[:prices[-1].start()].strip()
+                if potential_total is not None and label_candidate and not blacklist_re.search(label_candidate):
+                    label = label_candidate
+                    total = potential_total
+                    qty = 1.0
+                    unit_price = total
+                    vat_match = re.search(r"(\d{1,2}(?:[\.,]\d+)?%)", text_line)
+                    if vat_match:
+                        vat = parse_number(vat_match.group(1).replace('%', ''))
+        # If we have a plausible label but no total yet, try to merge weight + trailing price-only line
+        pending_weight = None
+        if label is not None and total is None:
+            # Next line as weight and next+1 as price-only
+            if i + 1 < count and (i + 1) not in visited:
+                w = _parse_weight_line(lines[i + 1])
+                if w:
+                    # Prefer total on weight line; otherwise look at next line only if it's just a price
+                    wt_total = w.get('total')
+                    next_price = None
+                    if wt_total is None and (i + 2) < count and (i + 2) not in visited:
+                        mprice = price_only_re.match(lines[i + 2])
+                        if mprice:
+                            next_price = parse_number(mprice.group(1))
+                    if wt_total is not None or next_price is not None:
+                        pending_weight = w
+                        visited.add(i + 1)
+                        if next_price is not None:
+                            total = next_price
+                            visited.add(i + 2)
+                        else:
+                            total = wt_total
+            # Or previous line as weight and next line as price-only
+            if pending_weight is None and i > 0 and (i - 1) not in visited:
+                w = _parse_weight_line(lines[i - 1])
+                if w:
+                    wt_total = w.get('total')
+                    next_price = None
+                    if wt_total is None and (i + 1) < count and (i + 1) not in visited:
+                        mprice = price_only_re.match(lines[i + 1])
+                        if mprice:
+                            next_price = parse_number(mprice.group(1))
+                    if wt_total is not None or next_price is not None:
+                        pending_weight = w
+                        visited.add(i - 1)
+                        if next_price is not None:
+                            total = next_price
+                            visited.add(i + 1)
+                        else:
+                            total = wt_total
+        if label is None or total is None:
+            i += 1
             continue
-        # Label with single price at end
-        m2 = label_price_re.search(l2)
-        if m2:
-            tot = parse_number(m2.group("tot"))
-            label = m2.group("label").strip()
+        label, vat = _strip_vat_tokens(label, vat)
+        label = _remove_weight_tokens(label)
+        if not label:
+            i += 1
+            continue
+        if vat is not None and not (0 < vat <= 24):
             vat = None
-            if m2.group("vat"):
-                vat = parse_number(m2.group("vat").replace('%',''))
-            if tot is not None:
-                items.append({"label": label, "qty": 1.0, "unit": tot, "total": tot, "vat": vat})
-                continue
-        # As a fallback, try to split by the last price occurrence
-        prices = list(price_re.finditer(l2))
-        if prices:
-            p = prices[-1]
-            label = l2[: p.start()].strip()
-            tot = parse_number(p.group("val"))
-            if tot is not None and label:
-                # try find vat percent anywhere in line
-                mvat = re.search(r"(\d{1,2}(?:[\.,]\d+)?%)", l2)
-                vat = parse_number(mvat.group(1).replace('%','')) if mvat else None
-                items.append({"label": label, "qty": 1.0, "unit": tot, "total": tot, "vat": vat})
+        if unit_price is None or unit_price == 0:
+            unit_price = total / max(qty or 1.0, 1e-6)
+        item = {
+            '_index': i,
+            'label': label,
+            'qty': qty or 1.0,
+            'unit': unit_price,
+            'total': total,
+            'vat': vat,
+        }
+        weight_info = pending_weight if 'pending_weight' in locals() and pending_weight else None
+        if weight_info is None and i + 1 < count and (i + 1) not in visited:
+            maybe_w = _parse_weight_line(lines[i + 1])
+            if maybe_w:
+                weight_info = maybe_w
+                visited.add(i + 1)
+        if not weight_info and i > 0 and (i - 1) not in visited:
+            prev_weight = _parse_weight_line(lines[i - 1])
+            if prev_weight:
+                weight_info = prev_weight
+                visited.add(i - 1)
+        if weight_info and weight_info.get('weight'):
+            weight = weight_info['weight']
+            item['qty'] = weight
+            item['weightKg'] = weight
+            price_per_unit = weight_info.get('price_per_unit')
+            if price_per_unit:
+                item['unit'] = price_per_unit
+                item['pricePerKg'] = price_per_unit
+            else:
+                item['unit'] = item['total'] / max(weight, 1e-6)
+            if weight_info.get('total'):
+                item['total'] = weight_info['total']
+        items.append(item)
+        i += 1
+    items.sort(key=lambda it: it['_index'])
+    for item in items:
+        item.pop('_index', None)
     return items
-
-
 def infer_totals(lines: list[str], items: list[dict]) -> dict:
     totals = {"subtotal": 0.0, "tax": 0.0, "total": 0.0}
     text_lines = list(lines)

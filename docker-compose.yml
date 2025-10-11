@@ -38,6 +38,7 @@ services:
       Ml__Endpoint: http://ml:8082
     depends_on:
       - db
+      - api
   db:
     image: postgres:16-alpine
     environment:

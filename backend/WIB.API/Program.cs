@@ -161,6 +161,32 @@ using (var scope = app.Services.CreateScope())
         try
         {
             db.Database.Migrate();
+            // Ensure new columns exist when migrations assembly is out of sync
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'WeightKg'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""WeightKg"" numeric(10,3) NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'PricePerKg'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'PriceHistories' AND column_name = 'PricePerKg'
+    ) THEN
+        ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
+    END IF;
+END $$;");
+            }
+            catch { /* best-effort */ }
             break;
         }
         catch

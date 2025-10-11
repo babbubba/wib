@@ -31,7 +31,11 @@ public class ReceiptStorage : IReceiptStorage
             var byProduct = receipt.Lines
                 .Where(l => l.ProductId.HasValue)
                 .GroupBy(l => l.ProductId!.Value)
-                .Select(g => new { ProductId = g.Key, UnitPrice = g.Min(x => x.UnitPrice) })
+                .Select(g => new {
+                    ProductId = g.Key,
+                    UnitPrice = g.Min(x => x.UnitPrice),
+                    PricePerKg = g.Where(x => x.PricePerKg.HasValue).Select(x => x.PricePerKg!.Value).DefaultIfEmpty().Min()
+                })
                 .ToList();
 
             foreach (var item in byProduct)
@@ -46,7 +50,8 @@ public class ReceiptStorage : IReceiptStorage
                         ProductId = item.ProductId,
                         StoreId = storeId,
                         Date = day,
-                        UnitPrice = item.UnitPrice
+                        UnitPrice = item.UnitPrice,
+                        PricePerKg = item.PricePerKg == 0 ? null : item.PricePerKg
                     });
                 }
             }

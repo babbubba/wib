@@ -83,10 +83,13 @@ public class WibDbContext : DbContext
         modelBuilder.Entity<ReceiptLine>().Property(p => p.UnitPrice).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.LineTotal).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.VatRate).HasPrecision(5, 2);
+        modelBuilder.Entity<ReceiptLine>().Property(p => p.WeightKg).HasPrecision(10, 3);
+        modelBuilder.Entity<ReceiptLine>().Property(p => p.PricePerKg).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.PredictionConfidence).HasPrecision(3, 2);
         modelBuilder.Entity<Receipt>().Property(p => p.Total).HasPrecision(10, 3);
         modelBuilder.Entity<Receipt>().Property(p => p.TaxTotal).HasPrecision(10, 3);
         modelBuilder.Entity<PriceHistory>().Property(p => p.UnitPrice).HasPrecision(10, 3);
+        modelBuilder.Entity<PriceHistory>().Property(p => p.PricePerKg).HasPrecision(10, 3);
         modelBuilder.Entity<BudgetMonth>().Property(p => p.LimitAmount).HasPrecision(10, 2);
         modelBuilder.Entity<ExpenseAggregate>().Property(p => p.Amount).HasPrecision(12, 2);
         modelBuilder.Entity<LabelingEvent>().Property(p => p.Confidence).HasPrecision(3, 2);
