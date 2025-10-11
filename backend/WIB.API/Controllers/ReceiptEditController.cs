@@ -101,7 +101,7 @@ public class ReceiptEditController : ControllerBase
 
         if (body.Lines != null && body.Lines.Count > 0)
         {
-            var arr = receipt.Lines.OrderBy(l => l.Id).ToList();
+            var arr = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
             var removals = body.Lines.Where(p => p.Remove == true).OrderByDescending(p => p.Index).ToList();
             foreach (var rm in removals)
             {
@@ -210,6 +210,7 @@ public class ReceiptEditController : ControllerBase
                     catId = cat.Id;
                 }
 
+                var nextIndex = (receipt.Lines.Any() ? receipt.Lines.Max(x => (int?)x.SortIndex) ?? -1 : -1) + 1;
                 var newLine = new WIB.Domain.ReceiptLine
                 {
                     LabelRaw = add.LabelRaw.Trim(),
@@ -217,6 +218,7 @@ public class ReceiptEditController : ControllerBase
                     UnitPrice = add.UnitPrice,
                     LineTotal = add.LineTotal,
                     VatRate = add.VatRate,
+                    SortIndex = nextIndex,
                     ProductId = null,
                     PredictedCategoryId = catId,
                     PredictionConfidence = catId.HasValue ? 1.0m : null
@@ -232,6 +234,17 @@ public class ReceiptEditController : ControllerBase
                         feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
                     }
                 }
+            }
+        }
+
+        if (body.Order != null && body.Order.Count == receipt.Lines.Count)
+        {
+            var current = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
+            for (int newPos = 0; newPos < body.Order.Count; newPos++)
+            {
+                var origIdx = body.Order[newPos];
+                if (origIdx < 0 || origIdx >= current.Count) continue;
+                current[origIdx].SortIndex = newPos;
             }
         }
 

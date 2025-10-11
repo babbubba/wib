@@ -13,6 +13,10 @@ public class Receipt
     public decimal Total { get; set; }
     public string? RawText { get; set; }
     public string? ImageObjectKey { get; set; }
+    public int? OcrStoreX { get; set; }
+    public int? OcrStoreY { get; set; }
+    public int? OcrStoreW { get; set; }
+    public int? OcrStoreH { get; set; }
     public List<ReceiptLine> Lines { get; set; } = new();
 }
 
@@ -28,6 +32,11 @@ public class ReceiptLine
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public int SortIndex { get; set; }
+    public int? OcrX { get; set; }
+    public int? OcrY { get; set; }
+    public int? OcrW { get; set; }
+    public int? OcrH { get; set; }
     // Peso e prezzo al Kg quando disponibili
     public decimal? WeightKg { get; set; }
     public decimal? PricePerKg { get; set; }

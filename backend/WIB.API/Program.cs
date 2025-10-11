@@ -185,6 +185,60 @@ BEGIN
     ) THEN
         ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
     END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'SortIndex'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""SortIndex"" integer NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrX'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrX"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrY'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrY"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrW'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrW"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrH'
+    ) THEN
+        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrH"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreX'
+    ) THEN
+        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreX"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreY'
+    ) THEN
+        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreY"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreW'
+    ) THEN
+        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreW"" integer NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreH'
+    ) THEN
+        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreH"" integer NULL;
+    END IF;
 END $$;");
             }
             catch { /* best-effort */ }

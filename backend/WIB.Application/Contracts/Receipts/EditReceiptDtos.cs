@@ -13,6 +13,8 @@ public class EditReceiptRequest
     public string? Currency { get; set; }
     public List<EditReceiptLine> Lines { get; set; } = new();
     public List<NewReceiptLine> AddLines { get; set; } = new();
+    // Optional: reordering of existing lines by their original indices (after any removals applied client-side)
+    public List<int>? Order { get; set; }
 }
 
 public class EditReceiptLine

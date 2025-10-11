@@ -16,6 +16,9 @@ public class ProcessReceiptCommandHandlerTests
     private sealed class StubKie : IKieClient
     {
         public Task<WIB.Application.Contracts.Kie.ReceiptDraft> ExtractFieldsAsync(string ocrResult, CancellationToken ct)
+            => ExtractFieldsAsync(ocrResult, null, ct);
+
+        public Task<WIB.Application.Contracts.Kie.ReceiptDraft> ExtractFieldsAsync(string ocrResult, byte[]? imageBytes, CancellationToken ct)
             => Task.FromResult(new WIB.Application.Contracts.Kie.ReceiptDraft
             {
                 Store = new WIB.Application.Contracts.Kie.ReceiptDraftStore { Name = "Test" },
@@ -37,6 +40,7 @@ public class ProcessReceiptCommandHandlerTests
     {
         public Task<string> SaveAsync(Stream image, string? contentType, CancellationToken ct) => Task.FromResult("2025/01/01/test.jpg");
         public Task<Stream> GetAsync(string objectKey, CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream(new byte[] { 1 }));
+        public Task DeleteAsync(string objectKey, CancellationToken ct) => Task.CompletedTask;
     }
 
     [Fact]

@@ -20,4 +20,13 @@ public class KieClient : IKieClient
         var draft = await resp.Content.ReadFromJsonAsync<ReceiptDraft>(cancellationToken: ct);
         return draft ?? new ReceiptDraft();
     }
+
+    public async Task<ReceiptDraft> ExtractFieldsAsync(string ocrResult, byte[]? imageBytes, CancellationToken ct)
+    {
+        object payload = imageBytes == null ? new { text = ocrResult } : new { text = ocrResult, image_b64 = Convert.ToBase64String(imageBytes) };
+        using var resp = await _http.PostAsJsonAsync("/kie", payload, ct);
+        resp.EnsureSuccessStatusCode();
+        var draft = await resp.Content.ReadFromJsonAsync<ReceiptDraft>(cancellationToken: ct);
+        return draft ?? new ReceiptDraft();
+    }
 }

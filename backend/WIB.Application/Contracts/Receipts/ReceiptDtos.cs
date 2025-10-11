@@ -21,6 +21,10 @@ public class ReceiptStoreDto
     public string? Chain { get; set; }
     public string? PostalCode { get; set; }
     public string? VatNumber { get; set; }
+    public int? OcrX { get; set; }
+    public int? OcrY { get; set; }
+    public int? OcrW { get; set; }
+    public int? OcrH { get; set; }
 }
 
 public class ReceiptLineDto
@@ -31,6 +35,10 @@ public class ReceiptLineDto
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public int? OcrX { get; set; }
+    public int? OcrY { get; set; }
+    public int? OcrW { get; set; }
+    public int? OcrH { get; set; }
     public Guid? CategoryId { get; set; }
     public string? CategoryName { get; set; }
 }

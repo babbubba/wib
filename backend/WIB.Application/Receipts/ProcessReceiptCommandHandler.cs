@@ -37,7 +37,10 @@ public class ProcessReceiptCommandHandler
         }
 
         var ocrResult = await _ocr.ExtractAsync(ms, ct);
-        var kie = await _kie.ExtractFieldsAsync(ocrResult, ct);
+        // Prepare image bytes for KIE to extract bounding boxes if supported
+        ms.Position = 0;
+        var imgBytes = ms.ToArray();
+        var kie = await _kie.ExtractFieldsAsync(ocrResult, imgBytes, ct);
 
         // Try to normalize store name to an existing store
         Guid? existingStoreId = null;
@@ -68,6 +71,10 @@ public class ProcessReceiptCommandHandler
             Total = kie.Totals.Total,
             RawText = ocrResult,
             ImageObjectKey = objectKey,
+            OcrStoreX = kie.StoreOcrX,
+            OcrStoreY = kie.StoreOcrY,
+            OcrStoreW = kie.StoreOcrW,
+            OcrStoreH = kie.StoreOcrH,
             Lines = new List<WIB.Domain.ReceiptLine>()
         };
 
@@ -77,6 +84,7 @@ public class ProcessReceiptCommandHandler
             receipt.StoreLocation.Store = receipt.Store;
         }
 
+        var idx = 0;
         foreach (var l in kie.Lines)
         {
             var corrected = await _names.CorrectProductLabelAsync(l.LabelRaw, ct);
@@ -91,6 +99,11 @@ public class ProcessReceiptCommandHandler
                 VatRate = l.VatRate,
                 WeightKg = l.WeightKg,
                 PricePerKg = l.PricePerKg,
+                SortIndex = idx++,
+                OcrX = l.OcrX,
+                OcrY = l.OcrY,
+                OcrW = l.OcrW,
+                OcrH = l.OcrH,
                 PredictedTypeId = typeId,
                 PredictedCategoryId = categoryId,
                 PredictionConfidence = (decimal?)confidence

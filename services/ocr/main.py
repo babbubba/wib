@@ -75,8 +75,13 @@ class KieEngine:
             self.detail = "No KIE model configured; using stub"
 
     def infer_image(self, image_bytes: bytes) -> dict:
-        text = ocr_text(image_bytes)
-        return parse_text(text)
+        # Prefer structured parsing with line boxes
+        try:
+            lines = ocr_lines(image_bytes)
+            return parse_text_with_lines(lines)
+        except Exception:
+            text = ocr_text(image_bytes)
+            return parse_text(text)
 
 
 KIE = KieEngine()
@@ -245,6 +250,42 @@ def ocr_text(image_bytes: bytes) -> str:
     except Exception:
         return ""
 
+def ocr_lines(image_bytes: bytes) -> list[dict]:
+    from pytesseract import Output
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        gray = ImageOps.grayscale(img)
+        data = pytesseract.image_to_data(gray, output_type=Output.DICT)
+        n = len(data['text'])
+        groups = {}
+        order = []
+        for i in range(n):
+            txt = (data['text'][i] or '').strip()
+            if not txt:
+                continue
+            key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+            if key not in groups:
+                groups[key] = {
+                    'text_parts': [],
+                    'x1': 1e9, 'y1': 1e9, 'x2': -1, 'y2': -1
+                }
+                order.append(key)
+            g = groups[key]
+            g['text_parts'].append(txt)
+            x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+            g['x1'] = min(g['x1'], x)
+            g['y1'] = min(g['y1'], y)
+            g['x2'] = max(g['x2'], x + w)
+            g['y2'] = max(g['y2'], y + h)
+        lines: list[dict] = []
+        for key in order:
+            g = groups[key]
+            text = " ".join(g['text_parts']).strip()
+            if not text:
+                continue
+            x1, y1, x2, y2 = g['x1'], g['y1'], g['x2'], g['y2']
+            lines.append({'text': text, 'bbox': {'x': int(x1), 'y': int(y1), 'w': int(x2 - x1), 'h': int(y2 - y1)}})
+        return lines
+
 
 def parse_text(text: str) -> dict:
     lines = [clean_line(l) for l in text.splitlines()]
@@ -271,6 +312,60 @@ def parse_text(text: str) -> dict:
                 "vatRate": float(it["vat"]) if it.get("vat") is not None else None,
                 "weightKg": float(it["weightKg"]) if it.get("weightKg") is not None else None,
                 "pricePerKg": float(it["pricePerKg"]) if it.get("pricePerKg") is not None else None,
+            }
+            for it in items
+        ],
+        "totals": {
+            "subtotal": float(totals.get("subtotal", 0.0)),
+            "tax": float(totals.get("tax", 0.0)),
+            "total": float(totals.get("total", sum(it["total"] for it in items))),
+        },
+    }
+
+def parse_text_with_lines(lines_with_boxes: list[dict]) -> dict:
+    # lines_with_boxes: [{text: str, bbox: {x,y,w,h}}]
+    lines = [clean_line(l['text']) for l in lines_with_boxes]
+    lines = [l for l in lines if l]
+    joined = "\n".join(lines)
+
+    store_name = infer_store(lines)
+    address, city, cap = infer_address_city_cap(lines)
+    vat = infer_vat(lines)
+    dt_iso = infer_datetime(lines) or datetime.now(timezone.utc).isoformat()
+    currency = infer_currency(joined)
+    items = infer_items(lines)
+    totals = infer_totals(lines, items)
+
+    # Map line index -> bbox
+    idx_to_bbox = {idx: lb['bbox'] for idx, lb in enumerate(lines_with_boxes) if (clean_line(lb['text']) or None)}
+    # Try find store line index
+    try:
+        store_idx = lines.index(store_name) if store_name else 0
+    except ValueError:
+        store_idx = 0
+    store_bbox = idx_to_bbox.get(store_idx)
+
+    return {
+        "store": {"name": store_name or "", "address": address, "city": city, "postalCode": cap, "vatNumber": vat},
+        "storeOcrX": (store_bbox or {}).get('x'),
+        "storeOcrY": (store_bbox or {}).get('y'),
+        "storeOcrW": (store_bbox or {}).get('w'),
+        "storeOcrH": (store_bbox or {}).get('h'),
+        "datetime": dt_iso,
+        "currency": currency or "EUR",
+        "lines": [
+            {
+                "labelRaw": it["label"],
+                "qty": float(it["qty"]),
+                "unitPrice": float(it["unit"]),
+                "lineTotal": float(it["total"]),
+                "vatRate": float(it["vat"]) if it.get("vat") is not None else None,
+                "weightKg": float(it["weightKg"]) if it.get("weightKg") is not None else None,
+                "pricePerKg": float(it["pricePerKg"]) if it.get("pricePerKg") is not None else None,
+                "ocrX": idx_to_bbox.get(it.get("_index"), {}).get('x'),
+                "ocrY": idx_to_bbox.get(it.get("_index"), {}).get('y'),
+                "ocrW": idx_to_bbox.get(it.get("_index"), {}).get('w'),
+                "ocrH": idx_to_bbox.get(it.get("_index"), {}).get('h'),
             }
             for it in items
         ],

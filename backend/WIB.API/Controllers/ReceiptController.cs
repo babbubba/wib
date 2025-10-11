@@ -112,11 +112,15 @@ public class ReceiptController : ControllerBase
                 City = receipt.StoreLocation?.City,
                 Chain = receipt.Store?.Chain,
                 PostalCode = receipt.StoreLocation?.PostalCode,
-                VatNumber = receipt.StoreLocation?.VatNumber
+                VatNumber = receipt.StoreLocation?.VatNumber,
+                OcrX = receipt.OcrStoreX,
+                OcrY = receipt.OcrStoreY,
+                OcrW = receipt.OcrStoreW,
+                OcrH = receipt.OcrStoreH
             },
             Datetime = receipt.Date,
             Currency = receipt.Currency,
-            Lines = receipt.Lines.OrderBy(l => l.Id).Select(l => {
+            Lines = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).Select(l => {
                 var catId = l.PredictedCategoryId ?? l.Product?.CategoryId;
                 string? catName = null;
                 if (l.PredictedCategoryId.HasValue)
@@ -129,6 +133,10 @@ public class ReceiptController : ControllerBase
                     UnitPrice = l.UnitPrice,
                     LineTotal = l.LineTotal,
                     VatRate = l.VatRate,
+                    OcrX = l.OcrX,
+                    OcrY = l.OcrY,
+                    OcrW = l.OcrW,
+                    OcrH = l.OcrH,
                     CategoryId = catId,
                     CategoryName = catName
                 };

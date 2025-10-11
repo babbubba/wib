@@ -3,17 +3,18 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { NgSelectModule } from '@ng-select/ng-select';
+import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ActivatedRoute } from '@angular/router';
 
 interface SpendingItem { year: number; month: number; amount: number; }
 interface ReceiptListItem { id: string; datetime: string; storeName?: string; total: number; }
-interface ReceiptDto { id: string; store: { name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string; }; datetime: string; currency: string; lines: { labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; categoryId?: string|null; categoryName?: string|null; }[]; totals: { total: number; } }
+interface ReceiptDto { id: string; store: { name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string; ocrX?: number|null; ocrY?: number|null; ocrW?: number|null; ocrH?: number|null; }; datetime: string; currency: string; lines: { labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; categoryId?: string|null; categoryName?: string|null; ocrX?: number|null; ocrY?: number|null; ocrW?: number|null; ocrH?: number|null; }[]; totals: { total: number; } }
 interface Suggestions { typeCandidates: { id: string; conf: number }[]; categoryCandidates: { id: string; conf: number }[] }
 
 @Component({
   selector: 'wib-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, NgSelectModule],
+  imports: [CommonModule, FormsModule, NgSelectModule, DragDropModule],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css'],
 })
@@ -27,6 +28,9 @@ export class DashboardComponent implements OnInit {
   sugs = signal<Record<number, Suggestions>>({});
   imageUrl = signal<string>("" as string);
   deleting = signal<boolean>(false);
+  imageDims = signal<{ nw: number; nh: number; cw: number; ch: number }|null>(null);
+  highlight = signal<{ x: number; y: number; w: number; h: number }|null>(null);
+  currentOrder = signal<number[]>([]);
   // edit state
   editStoreName = signal<string>("");
   editStoreAddress = signal<string>("");
@@ -210,11 +214,12 @@ export class DashboardComponent implements OnInit {
         this.editStorePostalCode.set(r.store.postalCode || "");
         this.editStoreVatNumber.set(r.store.vatNumber || "");
         this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, categoryName: l.categoryName || "", categoryId: l.categoryId || null })));
+        this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i));
       },
       error: (e) => this.error.set(e.message || "Errore")
     });
     this.http.get(`/api/receipts/${item.id}/image`, { responseType: "blob" as any }).subscribe({
-      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); },
+      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); this.imageDims.set(null); this.highlight.set(null); },
       error: (e) => this.error.set(e.message || "Errore immagine")
     });
   }
@@ -232,11 +237,12 @@ export class DashboardComponent implements OnInit {
         this.editStorePostalCode.set(r.store.postalCode || "");
         this.editStoreVatNumber.set(r.store.vatNumber || "");
         this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, categoryName: l.categoryName || "", categoryId: l.categoryId || null })));
+        this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i));
       },
       error: (e) => this.error.set(e.message || "Errore")
     });
     this.http.get(`/api/receipts/${id}/image`, { responseType: "blob" as any }).subscribe({
-      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); },
+      next: (b: any) => { if(this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); this.imageDims.set(null); this.highlight.set(null); },
       error: (e) => this.error.set(e.message || "Errore immagine")
     });
   }
@@ -313,6 +319,7 @@ export class DashboardComponent implements OnInit {
       storeVatNumber: this.editStoreVatNumber(),
       currency: this.editCurrency(),
       lines: linesPayload,
+      order: this.currentOrder(),
     };
     const ts = this.editDatetime();
     if (ts) body.datetime = new Date(ts).toISOString();
@@ -337,5 +344,41 @@ export class DashboardComponent implements OnInit {
       },
       error: (e) => { this.error.set(e.message || 'Eliminazione scontrino fallita'); this.deleting.set(false); }
     });
+  }
+
+  // Drag & drop reorder
+  drop(event: CdkDragDrop<any[]>) {
+    const arr = [...this.editLines()];
+    moveItemInArray(arr, event.previousIndex, event.currentIndex);
+    this.editLines.set(arr);
+    const ord = [...this.currentOrder()];
+    const [moved] = ord.splice(event.previousIndex, 1);
+    ord.splice(event.currentIndex, 0, moved);
+    this.currentOrder.set(ord);
+  }
+
+  // Highlight helpers
+  onImageLoad(ev: Event) {
+    const img = ev.target as HTMLImageElement;
+    this.imageDims.set({ nw: img.naturalWidth, nh: img.naturalHeight, cw: img.clientWidth, ch: img.clientHeight });
+  }
+  highlightLine(i: number) {
+    const r = this.selected(); if (!r) return;
+    const l = (r.lines as any[])[i];
+    if (l && l.ocrW && l.ocrH) this.highlight.set({ x: l.ocrX!, y: l.ocrY!, w: l.ocrW!, h: l.ocrH! });
+  }
+  highlightStore() {
+    const r = this.selected(); if (!r) return;
+    const s: any = r.store;
+    if (s && s.ocrW && s.ocrH) this.highlight.set({ x: s.ocrX!, y: s.ocrY!, w: s.ocrW!, h: s.ocrH! });
+  }
+  clearHighlight() { this.highlight.set(null); }
+  highlightStyle() {
+    const dims = this.imageDims(); const box = this.highlight();
+    if (!dims || !box) return { display: 'none' } as any;
+    const sx = dims.cw / dims.nw; const sy = dims.ch / dims.nh;
+    const l = Math.round(box.x * sx), t = Math.round(box.y * sy);
+    const w = Math.round(box.w * sx), h = Math.round(box.h * sy);
+    return { display: 'block', left: l+"px", top: t+"px", width: w+"px", height: h+"px" } as any;
   }
 }

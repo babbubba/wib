@@ -10,6 +10,10 @@ public class ReceiptDraft
     public string Currency { get; set; } = "EUR";
     public List<ReceiptDraftLine> Lines { get; set; } = new();
     public ReceiptDraftTotals Totals { get; set; } = new();
+    public int? StoreOcrX { get; set; }
+    public int? StoreOcrY { get; set; }
+    public int? StoreOcrW { get; set; }
+    public int? StoreOcrH { get; set; }
 }
 
 public class ReceiptDraftStore
@@ -34,6 +38,10 @@ public class ReceiptDraftLine
     // Opzionali: solo per prodotti a peso
     public decimal? WeightKg { get; set; }
     public decimal? PricePerKg { get; set; }
+    public int? OcrX { get; set; }
+    public int? OcrY { get; set; }
+    public int? OcrW { get; set; }
+    public int? OcrH { get; set; }
 }
 
 public class ReceiptDraftTotals

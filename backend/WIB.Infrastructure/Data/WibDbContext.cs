@@ -85,6 +85,7 @@ public class WibDbContext : DbContext
         modelBuilder.Entity<ReceiptLine>().Property(p => p.VatRate).HasPrecision(5, 2);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.WeightKg).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.PricePerKg).HasPrecision(10, 3);
+        modelBuilder.Entity<ReceiptLine>().Property(p => p.SortIndex).HasDefaultValue(0);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.PredictionConfidence).HasPrecision(3, 2);
         modelBuilder.Entity<Receipt>().Property(p => p.Total).HasPrecision(10, 3);
         modelBuilder.Entity<Receipt>().Property(p => p.TaxTotal).HasPrecision(10, 3);
