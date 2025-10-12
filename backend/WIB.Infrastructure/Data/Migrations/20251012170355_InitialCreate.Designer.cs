@@ -9,11 +9,11 @@ using WIB.Infrastructure.Data;
 
 #nullable disable
 
-namespace WIB.Infrastructure.Migrations
+namespace WIB.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(WibDbContext))]
-    [Migration("20251012165056_CompleteSchema")]
-    partial class CompleteSchema
+    [Migration("20251012170355_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -23,7 +23,14 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
   worker:
     build:
       context: .
@@ -39,8 +46,12 @@ services:
       Kie__Endpoint: http://ocr:8081
       Ml__Endpoint: http://ml:8082
     depends_on:
-      - db
-      - api
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_started
   db:
     image: postgres:16-alpine
     environment:

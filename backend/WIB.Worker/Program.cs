@@ -48,107 +48,32 @@ builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisCon
 
 var host = builder.Build();
 
-// Auto-migrate DB on startup (dev/local) con retry per dipendenze lente (DB)
+// Verify DB connection is available (API handles migrations)
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<WibDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrap");
-    const int maxAttempts = 30;
+    
+    const int maxAttempts = 10;
+    
     for (var attempt = 1; attempt <= maxAttempts; attempt++)
     {
         try
         {
-            db.Database.Migrate();
-            try
-            {
-                db.Database.ExecuteSqlRaw(@"DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'WeightKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""WeightKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'PriceHistories' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'SortIndex'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""SortIndex"" integer NOT NULL DEFAULT 0;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrX'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrX"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrY'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrY"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrW'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrW"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrH'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrH"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreX'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreX"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreY'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreY"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreW'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreW"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreH'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreH"" integer NULL;
-    END IF;
-END $$;");
-            }
-            catch { /* best-effort */ }
-            logger.LogInformation("Database migration successful");
+            logger.LogInformation("Verifying database connection (attempt {Attempt}/{MaxAttempts})", attempt, maxAttempts);
+            await db.Database.CanConnectAsync();
+            logger.LogInformation("Database connection verified successfully");
             break;
         }
         catch (Exception ex)
         {
             if (attempt == maxAttempts)
             {
-                logger.LogError(ex, "Database migration failed after {Attempts} attempts", maxAttempts);
+                logger.LogError(ex, "Database connection verification failed after {MaxAttempts} attempts", maxAttempts);
                 throw;
             }
-            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{Max}). Retrying...", attempt, maxAttempts);
+            
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{MaxAttempts}). Retrying in 2 seconds...", attempt, maxAttempts);
             await Task.Delay(2000);
         }
     }

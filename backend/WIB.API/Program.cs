@@ -153,103 +153,35 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Auto-migrate DB on startup (dev/local)
+// Auto-migrate DB on startup with retry logic
 using (var scope = app.Services.CreateScope())
 {
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<WibDbContext>();
+    
     var attempts = 0;
     var maxAttempts = 10;
-    while (true)
+    
+    while (attempts < maxAttempts)
     {
         try
         {
+            logger.LogInformation("Attempting database migration (attempt {Attempt}/{MaxAttempts})", attempts + 1, maxAttempts);
             db.Database.Migrate();
-            // Ensure new columns exist when migrations assembly is out of sync
-            try
-            {
-                db.Database.ExecuteSqlRaw(@"DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'WeightKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""WeightKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'PriceHistories' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'SortIndex'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""SortIndex"" integer NOT NULL DEFAULT 0;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrX'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrX"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrY'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrY"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrW'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrW"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'OcrH'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""OcrH"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreX'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreX"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreY'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreY"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreW'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreW"" integer NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'Receipts' AND column_name = 'OcrStoreH'
-    ) THEN
-        ALTER TABLE ""Receipts"" ADD COLUMN ""OcrStoreH"" integer NULL;
-    END IF;
-END $$;");
-            }
-            catch { /* best-effort */ }
+            logger.LogInformation("Database migration successful");
             break;
         }
-        catch
+        catch (Exception ex)
         {
-            if (++attempts >= maxAttempts) throw;
-            System.Threading.Thread.Sleep(2000);
+            attempts++;
+            if (attempts >= maxAttempts)
+            {
+                logger.LogError(ex, "Database migration failed after {MaxAttempts} attempts", maxAttempts);
+                throw;
+            }
+            
+            logger.LogWarning(ex, "Database migration attempt {Attempt} failed, retrying in 2 seconds", attempts);
+            await Task.Delay(2000);
         }
     }
 }

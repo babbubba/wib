@@ -8,7 +8,7 @@ using WIB.Infrastructure.Data;
 
 #nullable disable
 
-namespace WIB.Infrastructure.Migrations
+namespace WIB.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(WibDbContext))]
     partial class WibDbContextModelSnapshot : ModelSnapshot
