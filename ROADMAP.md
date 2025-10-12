@@ -25,10 +25,10 @@
 - [x] Test smoke dell'ambiente isolato
 
 ### 1.2 **Fix Inconsistenze API ML** 🔥 ALTO  
-- [ ] Analizzare interfaccia `IProductClassifier`
-- [ ] Uniformare chiamate da tuple a oggetto strutturato
-- [ ] Aggiornare `ProcessReceiptCommandHandler.cs`
-- [ ] Test delle modifiche
+- [x] Analizzare interfaccia `IProductClassifier`
+- [x] Uniformare chiamate da tuple a oggetto strutturato
+- [x] Aggiornare `ProcessReceiptCommandHandler.cs`
+- [x] Test delle modifiche
 
 ### 1.3 **Refactoring ReceiptEditController** 🔧 ALTO
 - [ ] Estrarre metodi privati per logica complessa
@@ -151,7 +151,12 @@
   - ✅ Commit stabilizzato (commit 3876a03)
   - ✅ Ambiente Docker isolato testato e funzionante
   - ✅ Health checks API/OCR/ML confermati
-- 🚗 **IN CORSO**: FASE 1.2 - Fix inconsistenze API ML
+- ✅ **COMPLETATA**: FASE 1.2 - Fix inconsistenze API ML
+  - ✅ Creato MlPredictionResult per API consistente
+  - ✅ Aggiornati tutti i punti di utilizzo (IProductClassifier, ProductClassifier, MlController)
+  - ✅ Fixati test con stub mancanti (IImageStorage.DeleteAsync, INameMatcher)
+  - ✅ Tutti i test passano (8/8)
+- 🚗 **IN CORSO**: FASE 1.3 - Refactoring ReceiptEditController
 
 ---
 
