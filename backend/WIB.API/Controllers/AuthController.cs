@@ -1,45 +1,76 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
-using WIB.API.Auth;
+using System.Security.Claims;
+using WIB.Application.Interfaces;
 
 namespace WIB.API.Controllers;
 
-public record TokenRequest(string Username, string Password);
-public record TokenResponse(string AccessToken, string TokenType, int ExpiresIn, string Role);
-
 [ApiController]
-[Route("auth")]
-public class AuthController : ControllerBase
+[Route("api/[controller]")]
+public class AuthController : BaseApiController
 {
-    private readonly IOptions<AuthOptions> _opts;
-    public AuthController(IOptions<AuthOptions> opts) { _opts = opts; }
+    private readonly IAuthService _authService;
 
-    [HttpPost("token")]
-    public ActionResult<TokenResponse> Token([FromBody] TokenRequest req)
+    public AuthController(IAuthService authService)
     {
-        var user = _opts.Value.Users.FirstOrDefault(u => u.Username == req.Username && u.Password == req.Password);
-        if (user == null) return Unauthorized();
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_opts.Value.Key));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.Name, user.Username),
-            new(ClaimTypes.Role, user.Role)
-        };
-        var token = new JwtSecurityToken(
-            issuer: _opts.Value.Issuer,
-            audience: _opts.Value.Audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(8),
-            signingCredentials: creds);
-        var handler = new JwtSecurityTokenHandler();
-        var jwt = handler.WriteToken(token);
-        return Ok(new TokenResponse(jwt, "Bearer", 8 * 3600, user.Role));
+        _authService = authService;
     }
+
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    {
+        var result = await _authService.RegisterAsync(request);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    {
+        // Get client info from request headers/context
+        request.DeviceInfo = Request.Headers["User-Agent"].FirstOrDefault();
+        request.IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var result = await _authService.LoginAsync(request);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("refresh")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+    {
+        var result = await _authService.RefreshTokenAsync(request);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+    {
+        var result = await _authService.LogoutAsync(request.RefreshToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("revoke-all")]
+    [Authorize]
+    public async Task<IActionResult> RevokeAllTokens()
+    {
+        var userId = GetCurrentUserId();
+        var result = await _authService.RevokeAllTokensAsync(userId);
+        return ToActionResult(result);
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetCurrentUser()
+    {
+        var userId = GetCurrentUserId();
+        var result = await _authService.GetCurrentUserAsync(userId);
+        return ToActionResult(result);
+    }
+
+}
+
+public class LogoutRequest
+{
+    public string RefreshToken { get; set; } = string.Empty;
 }
 

@@ -30,7 +30,7 @@
 ## Security & Configuration Tips
 - Use env vars (double-underscore) for nested settings (see `docker-compose.yml`): `ConnectionStrings__Default`, `Ocr__Endpoint`, `Ml__Endpoint`, `Auth__Key`.
 - Do not commit secrets; mount models/data under `.data/`. Default ports: API 8080, OCR 8081, ML 8082, Proxy 8085.
-- Windows/PowerShell workflow and tips: see `agent.md`.
+- Windows/PowerShell workflow and tips: see `WARP.md` (canonical).
 
 ## Direttive Windows 11 (PowerShell)
 - Usa solo PowerShell su Windows 11: non usare sintassi Bash (`export`, `&&`, `VAR=cmd`).

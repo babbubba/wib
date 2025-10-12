@@ -8,9 +8,8 @@ using WIB.Infrastructure.Data;
 namespace WIB.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = "wmc")]
 [Route("receipts")]
-public class ReceiptController : ControllerBase
+public class ReceiptController : BaseApiController
 {
     private readonly IImageStorage _imageStorage;
     private readonly IReceiptQueue _queue;
@@ -24,24 +23,30 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpPost]
-    [AllowAnonymous]
+    [Authorize]
     [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
     {
+        var userId = GetCurrentUserId();
+        
         await using var stream = file.OpenReadStream();
         var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
+        
+        var queueItem = new ReceiptQueueItem(objectKey, userId);
         try
         {
-            await _queue.EnqueueAsync(objectKey, ct);
+            await _queue.EnqueueAsync(queueItem, ct);
         }
         catch
         {
             // Non bloccare l'upload se la coda è temporaneamente indisponibile
         }
+        
         return Accepted(new { objectKey });
     }
 
     [HttpGet]
+    [Authorize]
     public async Task<ActionResult<IEnumerable<ReceiptListItemDto>>> List([FromQuery] int skip = 0, [FromQuery] int take = 20, CancellationToken ct = default)
     {
         if (take <= 0 || take > 100) take = 20;
@@ -63,6 +68,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("pending")]
+    [Authorize]
     public async Task<ActionResult<IEnumerable<LabelingItemDto>>> Pending([FromQuery] decimal maxConfidence = 0.6m, [FromQuery] int take = 50, CancellationToken ct = default)
     {
         if (take <= 0 || take > 200) take = 50;
@@ -87,6 +93,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts
@@ -160,6 +167,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("{id:guid}/image")]
+    [Authorize]
     public async Task<IActionResult> GetImage(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -171,6 +179,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts

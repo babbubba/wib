@@ -19,93 +19,109 @@ public class EnhancedNameMatcher : INameMatcher
     private readonly TimeSpan _cacheExpiry = TimeSpan.FromMinutes(30);
 
     // Brand normalization dictionary for ALL commercial activities
-    private static readonly Dictionary<string, string> BrandNormalizations = new()
+    private static readonly Dictionary<string, string> BrandNormalizations = InitializeBrandNormalizations();
+    
+    private static Dictionary<string, string> InitializeBrandNormalizations()
     {
-        // === SUPERMARKET & FOOD CHAINS ===
-        // Cooperative chains
-        {"coop", "coop"}, {"co-op", "coop"}, {"cooperativa", "coop"}, 
-        {"conad", "conad"}, {"con.ad", "conad"}, {"conad city", "conad"},
+        var dict = new Dictionary<string, string>();
+        var normalizations = new (string key, string value)[]
+        {
+            // === SUPERMARKET & FOOD CHAINS ===
+            // Cooperative chains
+            ("coop", "coop"), ("co-op", "coop"), ("cooperativa", "coop"), 
+            ("conad", "conad"), ("con.ad", "conad"), ("conad city", "conad"),
+            
+            // Major supermarkets
+            ("esselunga", "esselunga"), ("esse lunga", "esselunga"),
+            ("carrefour", "carrefour"), ("carrefur", "carrefour"), ("carrefour express", "carrefour"),
+            ("lidl", "lidl"), ("lidel", "lidl"),
+            ("eurospin", "eurospin"), ("euro spin", "eurospin"),
+            ("pam", "pam"), ("panorama", "pam"), ("pam local", "pam"),
+            ("auchan", "auchan"), ("simply", "auchan"),
+            ("ipercoop", "ipercoop"), ("iper coop", "ipercoop"),
+            ("sigma", "sigma"), ("tigre", "tigre"), ("tigre amico", "tigre"),
+            ("bennet", "bennet"), ("iperbenne", "bennet"),
+            ("despar", "despar"), ("interspar", "despar"), ("eurospar", "despar"),
+            ("il gigante", "gigante"), ("gigante", "gigante"),
+            
+            // Discount chains
+            ("md", "md"), ("m.d.", "md"), ("m d", "md"), ("md discount", "md"),
+            ("in's", "ins"), ("ins mercato", "ins"), ("ins", "ins"),
+            ("penny", "penny"), ("penny market", "penny"),
+            ("tuodi", "tuodi"), ("tuodì", "tuodi"),
+            ("todis", "todis"), ("ard", "ard"), ("aldi", "aldi"),
+            
+            // === RESTAURANTS & FOOD SERVICE ===
+            // Fast food
+            ("mcdonald's", "mcdonalds"), ("mcdonalds", "mcdonalds"), ("mc donald's", "mcdonalds"),
+            ("burger king", "burger king"), ("kfc", "kfc"), ("kentucky", "kfc"),
+            ("domino's", "dominos"), ("dominos", "dominos"),
+            ("pizza hut", "pizza hut"), ("pizzahut", "pizza hut"),
+            ("subway", "subway"), ("autogrill", "autogrill"),
+            
+            // Coffee & bars
+            ("starbucks", "starbucks"), ("costa coffee", "costa"),
+            ("bar", "bar"), ("caffè", "bar"), ("caffe", "bar"),
+            ("pasticceria", "pasticceria"), ("gelateria", "gelateria"),
+            
+            // === PHARMACIES & HEALTH ===
+            ("farmacia", "farmacia"), ("farm.", "farmacia"), ("farmacia comunale", "farmacia"),
+            ("lloyds", "lloyds"), ("lloyd's", "lloyds"),
+            ("boots", "boots"), ("cisalfa", "cisalfa"),
+            
+            // === GAS STATIONS ===
+            ("eni", "eni"), ("agip", "eni"), ("eni station", "eni"),
+            ("shell", "shell"), ("shell select", "shell"),
+            ("q8", "q8"), ("kuwait", "q8"),
+            ("esso", "esso"), ("exxon", "esso"),
+            ("ip", "ip"), ("italiana petroli", "ip"),
+            ("tamoil", "tamoil"), ("total", "total"), ("totalerg", "total"),
+            ("api", "api"), ("repsol", "repsol"),
+            
+            // === RETAIL & SPECIALTY STORES ===
+            // Electronics & tech
+            ("mediaworld", "mediaworld"), ("media world", "mediaworld"),
+            ("unieuro", "unieuro"), ("euronics", "euronics"),
+            ("expert", "expert"), ("trony", "trony"),
+            
+            // Fashion & clothing
+            ("zara", "zara"), ("h&m", "hm"), ("hm", "hm"), ("h & m", "hm"),
+            ("uniqlo", "uniqlo"), ("bershka", "bershka"),
+            ("pull&bear", "pull and bear"), ("stradivarius", "stradivarius"),
+            ("ovs", "ovs"), ("coin", "coin"),
+            
+            // Home & garden
+            ("ikea", "ikea"), ("leroy merlin", "leroy merlin"),
+            ("bricocenter", "bricocenter"), ("brico", "bricocenter"),
+            ("obi", "obi"), ("castorama", "castorama"),
+            
+            // === TABACCHI & SERVICES ===
+            ("tabacchi", "tabacchi"), ("tabaccheria", "tabacchi"), ("ricevitoria", "tabacchi"),
+            ("sisal", "sisal"), ("lottomatica", "lottomatica"),
+            
+            // === DEPARTMENT STORES ===
+            ("coop.fi", "coop"), ("supercoop", "supercoop"),
+            ("centro commerciale", "centro commerciale"), ("mall", "centro commerciale"),
+            
+            // === FOOD SPECIALTIES ===
+            ("pizzeria", "pizzeria"), ("ristorante", "ristorante"),
+            ("trattoria", "trattoria"), ("osteria", "osteria"),
+            ("alimentari", "alimentari"), ("salumeria", "alimentari"),
+            ("panetteria", "panetteria"), ("panificio", "panetteria"),
+            ("macelleria", "macelleria"), ("pescheria", "pescheria"),
+            ("fruttivendolo", "fruttivendolo"), ("ortofrutta", "fruttivendolo")
+        };
         
-        // Major supermarkets
-        {"esselunga", "esselunga"}, {"esse lunga", "esselunga"},
-        {"carrefour", "carrefour"}, {"carrefur", "carrefour"}, {"carrefour express", "carrefour"},
-        {"lidl", "lidl"}, {"lidel", "lidl"},
-        {"eurospin", "eurospin"}, {"euro spin", "eurospin"},
-        {"pam", "pam"}, {"panorama", "pam"}, {"pam local", "pam"},
-        {"auchan", "auchan"}, {"simply", "auchan"},
-        {"ipercoop", "ipercoop"}, {"iper coop", "ipercoop"},
-        {"sigma", "sigma"}, {"tigre", "tigre"}, {"tigre amico", "tigre"},
-        {"bennet", "bennet"}, {"iperbenne", "bennet"},
-        {"despar", "despar"}, {"interspar", "despar"}, {"eurospar", "despar"},
-        {"il gigante", "gigante"}, {"gigante", "gigante"},
+        foreach (var (key, value) in normalizations)
+        {
+            if (!dict.TryAdd(key, value))
+            {
+                throw new InvalidOperationException($"Duplicate key found in BrandNormalizations: '{key}'");
+            }
+        }
         
-        // Discount chains
-        {"md", "md"}, {"m.d.", "md"}, {"m d", "md"}, {"md discount", "md"},
-        {"in's", "ins"}, {"ins mercato", "ins"}, {"ins", "ins"},
-        {"penny", "penny"}, {"penny market", "penny"},
-        {"tuodi", "tuodi"}, {"tuodì", "tuodi"},
-        {"todis", "todis"}, {"ard", "ard"}, {"aldi", "aldi"},
-        
-        // === RESTAURANTS & FOOD SERVICE ===
-        // Fast food
-        {"mcdonald's", "mcdonalds"}, {"mcdonalds", "mcdonalds"}, {"mc donald's", "mcdonalds"},
-        {"burger king", "burger king"}, {"kfc", "kfc"}, {"kentucky", "kfc"},
-        {"domino's", "dominos"}, {"dominos", "dominos"},
-        {"pizza hut", "pizza hut"}, {"pizzahut", "pizza hut"},
-        {"subway", "subway"}, {"autogrill", "autogrill"},
-        
-        // Coffee & bars
-        {"starbucks", "starbucks"}, {"costa coffee", "costa"},
-        {"bar", "bar"}, {"caffè", "bar"}, {"caffe", "bar"},
-        {"pasticceria", "pasticceria"}, {"gelateria", "gelateria"},
-        
-        // === PHARMACIES & HEALTH ===
-        {"farmacia", "farmacia"}, {"farm.", "farmacia"}, {"farmacia comunale", "farmacia"},
-        {"lloyds", "lloyds"}, {"lloyd's", "lloyds"},
-        {"boots", "boots"}, {"cisalfa", "cisalfa"},
-        
-        // === GAS STATIONS ===
-        {"eni", "eni"}, {"agip", "eni"}, {"eni station", "eni"},
-        {"shell", "shell"}, {"shell select", "shell"},
-        {"q8", "q8"}, {"kuwait", "q8"},
-        {"esso", "esso"}, {"exxon", "esso"},
-        {"ip", "ip"}, {"italiana petroli", "ip"},
-        {"tamoil", "tamoil"}, {"total", "total"}, {"totalerg", "total"},
-        {"api", "api"}, {"repsol", "repsol"},
-        
-        // === RETAIL & SPECIALTY STORES ===
-        // Electronics & tech
-        {"mediaworld", "mediaworld"}, {"media world", "mediaworld"},
-        {"unieuro", "unieuro"}, {"euronics", "euronics"},
-        {"expert", "expert"}, {"trony", "trony"},
-        
-        // Fashion & clothing
-        {"zara", "zara"}, {"h&m", "hm"}, {"hm", "hm"}, {"h & m", "hm"},
-        {"uniqlo", "uniqlo"}, {"bershka", "bershka"},
-        {"pull&bear", "pull and bear"}, {"stradivarius", "stradivarius"},
-        {"ovs", "ovs"}, {"coin", "coin"},
-        
-        // Home & garden
-        {"ikea", "ikea"}, {"leroy merlin", "leroy merlin"},
-        {"bricocenter", "bricocenter"}, {"brico", "bricocenter"},
-        {"obi", "obi"}, {"castorama", "castorama"},
-        
-        // === TABACCHI & SERVICES ===
-        {"tabacchi", "tabacchi"}, {"tabaccheria", "tabacchi"}, {"ricevitoria", "tabacchi"},
-        {"sisal", "sisal"}, {"lottomatica", "lottomatica"},
-        
-        // === DEPARTMENT STORES ===
-        {"coop.fi", "coop"}, {"supercoop", "supercoop"},
-        {"centro commerciale", "centro commerciale"}, {"mall", "centro commerciale"},
-        
-        // === FOOD SPECIALTIES ===
-        {"pizzeria", "pizzeria"}, {"ristorante", "ristorante"},
-        {"trattoria", "trattoria"}, {"osteria", "osteria"},
-        {"alimentari", "alimentari"}, {"salumeria", "alimentari"},
-        {"panetteria", "panetteria"}, {"panificio", "panetteria"},
-        {"macelleria", "macelleria"}, {"pescheria", "pescheria"},
-        {"fruttivendolo", "fruttivendolo"}, {"ortofrutta", "fruttivendolo"}
-    };
+        return dict;
+    }
 
     public EnhancedNameMatcher(WibDbContext db, IMemoryCache cache, ILogger<EnhancedNameMatcher> logger)
     {

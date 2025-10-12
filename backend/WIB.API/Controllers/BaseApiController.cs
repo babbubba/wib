@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using WIB.Application.Common;
 using WIB.API.Middleware;
 using static WIB.Application.Common.ResultHelpers;
@@ -205,5 +206,33 @@ public abstract class BaseApiController : ControllerBase
     {
         // Implementation would use ILogger if injected
         // For now, this is a placeholder for consistent logging approach
+    }
+
+    /// <summary>
+    /// Gets the current user ID from JWT token claims
+    /// </summary>
+    /// <returns>User ID if authenticated, otherwise throws UnauthorizedAccessException</returns>
+    protected Guid GetCurrentUserId()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            throw new UnauthorizedAccessException("User ID not found in token");
+        }
+        return userId;
+    }
+
+    /// <summary>
+    /// Tries to get the current user ID from JWT token claims
+    /// </summary>
+    /// <returns>User ID if authenticated, otherwise null</returns>
+    protected Guid? TryGetCurrentUserId()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return null;
+        }
+        return userId;
     }
 }

@@ -3,6 +3,8 @@ namespace WIB.Domain;
 public class Receipt
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
     public Guid StoreId { get; set; }
     public Store? Store { get; set; }
     public Guid? StoreLocationId { get; set; }
@@ -144,4 +146,36 @@ public class LabelingEvent
     public Guid? FinalCategoryId { get; set; }
     public decimal Confidence { get; set; }
     public DateTimeOffset WhenUtc { get; set; }
+}
+
+public class User
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Email { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastLoginAt { get; set; }
+    public bool IsActive { get; set; } = true;
+    public bool EmailVerified { get; set; } = false;
+    public string? EmailVerificationToken { get; set; }
+    public string? PasswordResetToken { get; set; }
+    public DateTimeOffset? PasswordResetTokenExpiry { get; set; }
+    public List<Receipt> Receipts { get; set; } = new();
+    public List<RefreshToken> RefreshTokens { get; set; } = new();
+}
+
+public class RefreshToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public string Token { get; set; } = string.Empty;
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsRevoked { get; set; } = false;
+    public string? RevokedReason { get; set; }
+    public string? DeviceInfo { get; set; }
+    public string? IpAddress { get; set; }
 }

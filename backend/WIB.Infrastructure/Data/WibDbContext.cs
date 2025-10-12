@@ -19,6 +19,8 @@ public class WibDbContext : DbContext
     public DbSet<BudgetMonth> BudgetMonths => Set<BudgetMonth>();
     public DbSet<ExpenseAggregate> ExpenseAggregates => Set<ExpenseAggregate>();
     public DbSet<LabelingEvent> LabelingEvents => Set<LabelingEvent>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +44,11 @@ public class WibDbContext : DbContext
             .HasOne(a => a.Product)
             .WithMany(p => p.Aliases)
             .HasForeignKey(a => a.ProductId);
+
+        modelBuilder.Entity<Receipt>()
+            .HasOne(r => r.User)
+            .WithMany(u => u.Receipts)
+            .HasForeignKey(r => r.UserId);
 
         modelBuilder.Entity<Receipt>()
             .HasOne(r => r.Store)
@@ -77,6 +84,16 @@ public class WibDbContext : DbContext
             .HasOne(sl => sl.Store)
             .WithMany(s => s.Locations)
             .HasForeignKey(sl => sl.StoreId);
+
+        modelBuilder.Entity<RefreshToken>()
+            .HasOne(rt => rt.User)
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(rt => rt.UserId);
+
+        // User email unique index
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Email)
+            .IsUnique();
 
         // Precision for monetary/quantities
         modelBuilder.Entity<ReceiptLine>().Property(p => p.Qty).HasPrecision(10, 3);

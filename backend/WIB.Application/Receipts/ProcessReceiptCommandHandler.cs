@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using System.IO;
 using WIB.Application.Interfaces;
 
 namespace WIB.Application.Receipts
@@ -60,8 +59,15 @@ namespace WIB.Application.Receipts
                 if (match.HasValue) existingStoreId = match.Value.storeId;
             }
 
+            // Validate UserId - should be provided by caller (Worker will resolve Guid.Empty before calling)
+            if (command.UserId == Guid.Empty)
+            {
+                throw new InvalidOperationException("Valid UserId is required to process receipt. Admin operations should resolve UserId before calling handler.");
+            }
+
             var receipt = new WIB.Domain.Receipt
             {
+                UserId = command.UserId,
                 Store = existingStoreId.HasValue ? null : new WIB.Domain.Store
                 {
                     Name = kie.Store.Name,

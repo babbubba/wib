@@ -199,3 +199,16 @@ Direttive Docker/Compose (Windows 11 + WSL2)
 - Se l’agente non può eseguire direttamente rebuild/restart (permessi/blocchi), deve suggerire all’utente i comandi PowerShell esatti da lanciare e indicare i servizi da ricostruire.
 - Note WSL2: i percorsi Windows (es. `C:\\...`) sono montati nei container; continuare a usare sintassi PowerShell e `docker compose` (spazio), non `docker-compose`.
 
+---
+
+Guida comandi PowerShell e query DB
+
+Per evitare duplicazioni, il riferimento canonico è `WARP.md`.
+
+Contenuti disponibili in `WARP.md`:
+- Mapping comandi Windows 11 + PowerShell 5.1 (curl/grep/ls/sed/cat/find/cut/awk)
+- Esecuzione query DB nei container Docker (PostgreSQL, MySQL/MariaDB, SQL Server, MongoDB)
+- Linee guida su quoting, uso di curl.exe, e gestione sicura dei segreti
+
+Consulta `WARP.md`. In caso di discrepanza tra questo file e `WARP.md`, prevale `WARP.md`. 
+

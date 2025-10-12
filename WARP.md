@@ -247,6 +247,120 @@ Auth__Key=your-secret-key
 - **ML Models**: TF-IDF vectorizers loaded in memory, incremental learning supported
 - **Database**: Consider indexing on Receipt.Date, Store.Name for analytics queries
 
+---
+
+## Windows 11 + PowerShell 5.1: Command Equivalents and Gotchas
+
+To avoid common cross-shell mistakes on Windows, prefer native PowerShell cmdlets. If you need GNU tools, use WSL or Git Bash; otherwise use the mappings below.
+
+- HTTP/REST
+  - Prefer `Invoke-RestMethod` (JSON) or `Invoke-WebRequest`.
+  - PowerShell's `curl` is an alias to `Invoke-WebRequest`. To call the real curl, use `curl.exe` explicitly.
+  - Examples:
+    ```powershell
+    # JSON login (recommended)
+    $body    = @{ username = "admin"; password = "admin" } | ConvertTo-Json
+    $login   = Invoke-RestMethod -Uri 'http://localhost:8085/auth/token' -Method Post -ContentType 'application/json' -Body $body
+    $token   = $login.accessToken
+    $headers = @{ Authorization = "Bearer $token" }
+    Invoke-RestMethod -Uri 'http://localhost:8085/analytics/spending?from=2025-01-01&to=2025-12-31' -Headers $headers -Method Get
+
+    # Force native curl (not the PS alias)
+    $raw = curl.exe -s http://localhost:8085/health
+    ```
+
+- grep
+  - `grep pattern file` → `Select-String -Pattern "pattern" -Path file`
+  - `grep -R pattern .` → `Get-ChildItem -Recurse | Select-String -Pattern "pattern"`
+  - `ls -R | grep pattern` → `Get-ChildItem -Recurse | Where-Object Name -match 'pattern'`
+
+- ls/dir
+  - `ls -la` → `Get-ChildItem -Force`
+  - `ls -R` → `Get-ChildItem -Recurse`
+  - Built-in aliases: `ls` / `dir` / `gci` → `Get-ChildItem`
+
+- cat/head/tail
+  - `cat file` → `Get-Content file`
+  - `head -n 20 file` → `Get-Content file -TotalCount 20`
+  - `tail -n 100 -f file` → `Get-Content file -Tail 100 -Wait`
+
+- sed (inline replace)
+  - `sed -i 's/foo/bar/g' file` → `(Get-Content file) -replace 'foo','bar' | Set-Content file`
+
+- find/xargs
+  - `find . -name "*.cs"` → `Get-ChildItem -Path . -Recurse -Include *.cs -File`
+  - `find . -name "*.tmp" -print0 | xargs -0 rm -f` → `Get-ChildItem -Recurse -Include *.tmp -File | Remove-Item -Force`
+
+- cut/awk (column selection)
+  - `cut -d, -f2` → `ConvertFrom-Csv | Select-Object -ExpandProperty 2` (or select by property name)
+  - Prefer structured parsing: `ConvertFrom-Json`/`ConvertFrom-Csv` + `Select-Object`.
+
+Quoting tips (PS 5.1)
+- Use double quotes for variable interpolation ("$var"); single quotes do not interpolate.
+- When running Linux commands inside a container via `bash -lc`/`sh -lc`, wrap the whole command in double quotes in PowerShell and use single quotes inside when needed.
+
+---
+
+## Running DB queries inside Docker containers (non-interactive, safe)
+
+Manage credentials via environment variables in your PowerShell session. Do not print secrets; reference them as variables.
+
+Preparation:
+```powershell
+# PostgreSQL
+$env:PGUSER = 'wib_user'
+$env:PGDATABASE = 'wib'
+$env:PGPASSWORD = '{{PGPASSWORD}}'   # set your secret value securely
+
+# MySQL/MariaDB
+$env:MYSQL_USER = 'wib_user'
+$env:MYSQL_DB   = 'wib'
+$env:MYSQL_PWD  = '{{MYSQL_PWD}}'
+
+# SQL Server
+$env:SA_PASSWORD = '{{SA_PASSWORD}}'
+
+# MongoDB
+$env:MONGO_URI = 'mongodb://wib:wibpwd@localhost:27017/wib?authSource=admin'
+$env:MONGO_DB  = 'wib'
+```
+
+PostgreSQL (container e.g. `db` with psql installed):
+```powershell
+$SQL = "SELECT now();"
+docker exec -i db bash -lc "PGPASSWORD='$env:PGPASSWORD' psql -U $env:PGUSER -d $env:PGDATABASE -v ON_ERROR_STOP=1 -tAc \"$SQL\""
+# From file
+# Get-Content .\scripts\query.sql | docker exec -i db bash -lc "PGPASSWORD='$env:PGPASSWORD' psql -U $env:PGUSER -d $env:PGDATABASE -v ON_ERROR_STOP=1"
+```
+
+MySQL/MariaDB (container e.g. `mysql` with mysql client):
+```powershell
+$SQL = "SELECT NOW();"
+docker exec -i mysql bash -lc "MYSQL_PWD='$env:MYSQL_PWD' mysql -u $env:MYSQL_USER -D $env:MYSQL_DB -se \"$SQL\""
+# From file
+# Get-Content .\scripts\query.sql | docker exec -i mysql bash -lc "MYSQL_PWD='$env:MYSQL_PWD' mysql -u $env:MYSQL_USER -D $env:MYSQL_DB"
+```
+
+SQL Server (container e.g. `mssql` with sqlcmd):
+```powershell
+$SQL = "SELECT GETDATE();"
+docker exec -i mssql /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P $env:SA_PASSWORD -Q "$SQL" -l 30 -W -h -1
+```
+
+MongoDB (container e.g. `mongo` with mongosh):
+```powershell
+# With connection string
+docker exec -i mongo mongosh "$env:MONGO_URI" --quiet --eval "db.getSiblingDB('$env:MONGO_DB').stats().ok"
+# Query a collection
+$JS = "db.getSiblingDB('$env:MONGO_DB').mycol.findOne()"
+docker exec -i mongo mongosh "$env:MONGO_URI" --quiet --eval "$JS"
+```
+
+Guidelines
+- Avoid interactive prompts: pass queries via `-c`/`-Q`/`--eval` or pipe from a file.
+- Do not inline secrets in commands; set them in `$env:...` and reference the variables.
+- Prefer compact outputs: `-tAc` (psql), `-se` (mysql), `--quiet` (mongosh), `-W -h -1` (sqlcmd) to avoid pagers.
+
 <citations>
 <document>
 <document_type>WARP_DOCUMENTATION</document_type>

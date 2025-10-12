@@ -16,8 +16,8 @@ export class LoginComponent {
   returnUrl = signal<string>('/dashboard');
 
   form = this.fb.group({
-    username: this.fb.control('admin', [Validators.required]),
-    password: this.fb.control('admin', [Validators.required]),
+    email: this.fb.control('admin@wib.local', [Validators.required, Validators.email]),
+    password: this.fb.control('admin123', [Validators.required]),
   });
 
   constructor(
@@ -35,14 +35,14 @@ export class LoginComponent {
 
   submit() {
     this.error.set('');
-    if (this.form.invalid) { this.error.set('Username e password richiesti'); return; }
-    const { username, password } = this.form.value as any;
-    this.auth.login(username, password).subscribe({
-      next: (t) => {
-        if (t) this.router.navigate([this.returnUrl()]);
+    if (this.form.invalid) { this.error.set('Email e password richiesti'); return; }
+    const { email, password } = this.form.value as any;
+    this.auth.login(email, password).subscribe({
+      next: (response) => {
+        if (response?.accessToken) this.router.navigate([this.returnUrl()]);
         else this.error.set('Risposta di login non valida');
       },
-      error: (e) => this.error.set(e?.message || 'Login fallito'),
+      error: (e) => this.error.set(e?.error?.error || e?.message || 'Login fallito'),
     });
   }
 }

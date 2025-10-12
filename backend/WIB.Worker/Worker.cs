@@ -21,11 +21,11 @@ public class Worker : BackgroundService
         _logger.LogInformation("Worker started");
         while (!stoppingToken.IsCancellationRequested)
         {
-            string? key = null;
+            ReceiptQueueItem? queueItem = null;
             try
             {
-                key = await _queue.TryDequeueAsync(stoppingToken);
-                if (key is null)
+                queueItem = await _queue.TryDequeueAsync(stoppingToken);
+                if (queueItem is null)
                 {
                     await Task.Delay(500, stoppingToken);
                     continue;
@@ -34,8 +34,8 @@ public class Worker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var processor = scope.ServiceProvider.GetRequiredService<ReceiptProcessor>();
 
-                _logger.LogInformation("Processing receipt object {ObjectKey}", key);
-                await processor.ProcessAsync(key, stoppingToken);
+                _logger.LogInformation("Processing receipt object {ObjectKey} for user {UserId}", queueItem.ObjectKey, queueItem.UserId);
+                await processor.ProcessAsync(queueItem.ObjectKey, queueItem.UserId, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -43,16 +43,16 @@ public class Worker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing queue item {ObjectKey}", key ?? "<null>");
-                if (key is not null)
+                _logger.LogError(ex, "Error processing queue item {ObjectKey}", queueItem?.ObjectKey ?? "<null>");
+                if (queueItem is not null)
                 {
                     try
                     {
-                        await _queue.EnqueueAsync(key, CancellationToken.None);
+                        await _queue.EnqueueAsync(queueItem, CancellationToken.None);
                     }
                     catch (Exception enqueueEx)
                     {
-                        _logger.LogError(enqueueEx, "Failed to requeue item {ObjectKey}", key);
+                        _logger.LogError(enqueueEx, "Failed to requeue item {ObjectKey}", queueItem.ObjectKey);
                     }
                 }
                 await Task.Delay(1000, stoppingToken);

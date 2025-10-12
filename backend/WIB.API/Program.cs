@@ -9,11 +9,11 @@ using WIB.Infrastructure.Clients;
 using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
+using WIB.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using Microsoft.AspNetCore.Authorization;
-using WIB.API.Auth;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,10 +41,17 @@ builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.EnhancedNam
 builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 
-var conn = builder.Configuration.GetConnectionString("Default") ??
-           Environment.GetEnvironmentVariable("ConnectionStrings__Default") ??
-           "Host=localhost;Database=wib;Username=wib;Password=wib";
-builder.Services.AddDbContext<WibDbContext>(options => options.UseNpgsql(conn));
+// Authentication services
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<DatabaseSeedService>();
+
+// Database configuration
+var connectionString = builder.Configuration.GetConnectionString("Default")
+                      ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+                      ?? "Host=localhost;Database=wib;Username=wib;Password=wib";
+
+builder.Services.AddDbContext<WibDbContext>(options => options.UseNpgsql(connectionString));
 
 // MinIO options and storage
 builder.Services.Configure<MinioOptions>(builder.Configuration.GetSection("Minio"));
@@ -85,53 +92,29 @@ builder.Services.AddRateLimiter(_ =>
     _.RejectionStatusCode = 429;
 });
 
-// Auth (JWT)
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
-var authOpts = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
-// Ensure defaults are available to both JWT setup and injected options
-if (authOpts.Users == null || authOpts.Users.Count == 0)
-{
-    authOpts.Users = new List<AuthUser> {
-        new() { Username = "admin", Password = "admin", Role = "wmc" },
-        new() { Username = "device", Password = "device", Role = "devices" }
-    };
-}
-if (string.IsNullOrWhiteSpace(authOpts.Key)) authOpts.Key = new AuthOptions().Key;
-if (string.IsNullOrWhiteSpace(authOpts.Issuer)) authOpts.Issuer = new AuthOptions().Issuer;
-if (string.IsNullOrWhiteSpace(authOpts.Audience)) authOpts.Audience = new AuthOptions().Audience;
-builder.Services.PostConfigure<AuthOptions>(opts =>
-{
-    if (opts.Users == null || opts.Users.Count == 0)
-    {
-        opts.Users = new List<AuthUser> {
-            new() { Username = "admin", Password = "admin", Role = "wmc" },
-            new() { Username = "device", Password = "device", Role = "devices" }
-        };
-    }
-    if (string.IsNullOrWhiteSpace(opts.Key)) opts.Key = authOpts.Key;
-    if (string.IsNullOrWhiteSpace(opts.Issuer)) opts.Issuer = authOpts.Issuer;
-    if (string.IsNullOrWhiteSpace(opts.Audience)) opts.Audience = authOpts.Audience;
-});
-var keyBytes = Encoding.UTF8.GetBytes(authOpts.Key);
+// JWT Authentication Configuration
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtSecret = jwtSection["Secret"] ?? 
+    Environment.GetEnvironmentVariable("JWT_SECRET") ?? 
+    "your-super-secret-jwt-signing-key-that-should-be-at-least-32-characters-long";
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ValidateIssuer = true,
-            ValidIssuer = authOpts.Issuer,
+            ValidIssuer = jwtSection["Issuer"] ?? "WIB.API",
             ValidateAudience = true,
-            ValidAudience = authOpts.Audience,
-            ValidateLifetime = true
+            ValidAudience = jwtSection["Audience"] ?? "WIB.Client",
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(5)
         };
     });
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("wmc", p => p.RequireRole("wmc"));
-    options.AddPolicy("devices", p => p.RequireRole("devices"));
-});
+
+builder.Services.AddAuthorization();
 var app = builder.Build();
 
 var swaggerEnabled = app.Environment.IsDevelopment()
@@ -172,6 +155,12 @@ using (var scope = app.Services.CreateScope())
             logger.LogInformation("Attempting database migration (attempt {Attempt}/{MaxAttempts})", attempts + 1, maxAttempts);
             db.Database.Migrate();
             logger.LogInformation("Database migration successful");
+            
+            // Seed default data
+            var seedService = scope.ServiceProvider.GetRequiredService<DatabaseSeedService>();
+            await seedService.SeedDefaultDataAsync();
+            logger.LogInformation("Database seeding completed");
+            
             break;
         }
         catch (Exception ex)
