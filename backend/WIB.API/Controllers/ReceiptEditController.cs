@@ -194,6 +194,23 @@ public class ReceiptEditController : ControllerBase
         {
             foreach (var add in body.AddLines)
             {
+                if (string.IsNullOrWhiteSpace(add.LabelRaw))
+                {
+                    return BadRequest("addLines[].labelRaw mancante");
+                }
+                // Normalizza numerici mancanti: qty/unitPrice/lineTotal
+                // Evita null in value types e garantisce un payload completo lato server
+                var qty = add.Qty;
+                var unitPrice = add.UnitPrice;
+                var lineTotal = add.LineTotal;
+                if (qty <= 0 && unitPrice >= 0 && lineTotal == 0)
+                {
+                    qty = 1;
+                }
+                if (lineTotal == 0 && unitPrice >= 0 && qty >= 0)
+                {
+                    lineTotal = unitPrice * qty;
+                }
                 Guid? catId = add.FinalCategoryId;
                 if (!catId.HasValue && !string.IsNullOrWhiteSpace(add.FinalCategoryName))
                 {
@@ -214,9 +231,9 @@ public class ReceiptEditController : ControllerBase
                 var newLine = new WIB.Domain.ReceiptLine
                 {
                     LabelRaw = add.LabelRaw.Trim(),
-                    Qty = add.Qty,
-                    UnitPrice = add.UnitPrice,
-                    LineTotal = add.LineTotal,
+                    Qty = qty,
+                    UnitPrice = unitPrice,
+                    LineTotal = lineTotal,
                     VatRate = add.VatRate,
                     SortIndex = nextIndex,
                     ProductId = null,
@@ -240,17 +257,28 @@ public class ReceiptEditController : ControllerBase
         if (body.Order != null && body.Order.Count == receipt.Lines.Count)
         {
             var current = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
-            for (int newPos = 0; newPos < body.Order.Count; newPos++)
+            // Applica solo se l'array è una permutazione valida degli indici correnti
+            var valid = body.Order.All(i => i >= 0 && i < current.Count) && body.Order.Distinct().Count() == current.Count;
+            if (valid)
             {
-                var origIdx = body.Order[newPos];
-                if (origIdx < 0 || origIdx >= current.Count) continue;
-                current[origIdx].SortIndex = newPos;
+                for (int newPos = 0; newPos < body.Order.Count; newPos++)
+                {
+                    var origIdx = body.Order[newPos];
+                    current[origIdx].SortIndex = newPos;
+                }
             }
         }
 
         receipt.Total = receipt.Lines.Sum(x => x.LineTotal);
 
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict("La ricevuta è stata modificata nel frattempo. Riprova dopo aver ricaricato.");
+        }
 
         foreach (var target in feedbackTargets)
         {

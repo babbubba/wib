@@ -25,12 +25,19 @@ public class ReceiptController : ControllerBase
 
     [HttpPost]
     [AllowAnonymous]
-    [RequestSizeLimit(10 * 1024 * 1024)]
+    [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
     {
         await using var stream = file.OpenReadStream();
         var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
-        await _queue.EnqueueAsync(objectKey, ct);
+        try
+        {
+            await _queue.EnqueueAsync(objectKey, ct);
+        }
+        catch
+        {
+            // Non bloccare l'upload se la coda è temporaneamente indisponibile
+        }
         return Accepted(new { objectKey });
     }
 

@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpEventType } from '@angular/common/http';
 
@@ -10,6 +10,7 @@ import { HttpClient, HttpEventType } from '@angular/common/http';
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent {
+  @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   file = signal<File | null>(null);
   fileName = signal<string>('');
   uploading = signal<boolean>(false);
@@ -18,6 +19,7 @@ export class AppComponent {
   error = signal<string>('');
   preview = signal<string>('');
   successId = signal<string>('');
+  multiMode = signal<boolean>(true);
 
   constructor(private http: HttpClient) {}
 
@@ -31,6 +33,11 @@ export class AppComponent {
       this.error.set('');
       if (this.preview()) URL.revokeObjectURL(this.preview());
       this.preview.set(URL.createObjectURL(f));
+    }
+    // In modalità sequenziale, carica subito appena selezionato
+    if (this.multiMode() && this.file()) {
+      // piccola pausa per permettere il rendering della preview
+      setTimeout(() => this.upload(), 50);
     }
   }
 
@@ -54,6 +61,8 @@ export class AppComponent {
             this.successId.set(r?.objectKey || '');
             this.uploading.set(false);
             this.progress.set(100);
+            // in modalità sequenziale passa subito al prossimo
+            this.afterSuccessNext();
           }
         },
         error: (e) => {
@@ -81,6 +90,14 @@ export class AppComponent {
     this.newReceipt();
     // Optionally, scroll to top to the capture button
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  }
+
+  afterSuccessNext() {
+    if (this.multiMode()) {
+      this.newReceipt();
+      // Prova ad aprire automaticamente la fotocamera per la prossima foto
+      try { setTimeout(() => this.fileInput?.nativeElement?.click(), 200); } catch {}
+    }
   }
 
   private async compressImage(file: File, maxLongSide = 2048, quality = 0.85): Promise<Blob> {

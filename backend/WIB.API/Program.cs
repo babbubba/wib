@@ -60,7 +60,8 @@ builder.Services.AddHealthChecks()
 // Form limits (max 10 MB upload)
 builder.Services.Configure<FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 10 * 1024 * 1024;
+    // Consenti upload fino a 20 MB
+    o.MultipartBodyLengthLimit = 20 * 1024 * 1024;
 });
 
 // Rate limiting (fixed window, 30 req / 10s per IP)
