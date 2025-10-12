@@ -190,31 +190,32 @@ public class ReceiptEditController : ControllerBase
             }
         }
 
-        if (body.AddLines != null && body.AddLines.Count > 0)
+                if (body.AddLines != null && body.AddLines.Count > 0)
         {
-            foreach (var add in body.AddLines) {\n                // Product Type (merceologia) optional creation/assignment\n                Guid? typeIdAdd = add.FinalTypeId;\n                if (!typeIdAdd.HasValue && !string.IsNullOrWhiteSpace(add.FinalTypeName))\n                {\n                    var tname = add.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();\n                    var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);\n                    if (t == null) { var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower); t = new WIB.Domain.ProductType { Name = tnorm }; _db.ProductTypes.Add(t); await _db.SaveChangesAsync(ct); }\n                    typeIdAdd = t.Id;\n                }
-                if (string.IsNullOrWhiteSpace(add.LabelRaw))
+            foreach (var add in body.AddLines)
+            {
+                Guid? typeIdAdd = add.FinalTypeId;
+                if (!typeIdAdd.HasValue && !string.IsNullOrWhiteSpace(add.FinalTypeName))
                 {
-                    return BadRequest("addLines[].labelRaw mancante");
+                    var tname = add.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();
+                    var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);
+                    if (t == null)
+                    {
+                        var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower);
+                        t = new WIB.Domain.ProductType { Name = tnorm };
+                        _db.ProductTypes.Add(t);
+                        await _db.SaveChangesAsync(ct);
+                    }
+                    typeIdAdd = t.Id;
                 }
-                // Normalizza numerici mancanti: qty/unitPrice/lineTotal
-                // Evita null in value types e garantisce un payload completo lato server
-                var qty = add.Qty;
-                var unitPrice = add.UnitPrice;
-                var lineTotal = add.LineTotal;
-                if (qty <= 0 && unitPrice >= 0 && lineTotal == 0)
-                {
-                    qty = 1;
-                }
-                if (lineTotal == 0 && unitPrice >= 0 && qty >= 0)
-                {
-                    lineTotal = unitPrice * qty;
-                }
+                if (string.IsNullOrWhiteSpace(add.LabelRaw)) return BadRequest("addLines[].labelRaw mancante");
+                var qty = add.Qty; var unitPrice = add.UnitPrice; var lineTotal = add.LineTotal;
+                if (qty <= 0 && unitPrice >= 0 && lineTotal == 0) qty = 1;
+                if (lineTotal == 0 && unitPrice >= 0 && qty >= 0) lineTotal = unitPrice * qty;
                 Guid? catId = add.FinalCategoryId;
                 if (!catId.HasValue && !string.IsNullOrWhiteSpace(add.FinalCategoryName))
                 {
-                    var cname = add.FinalCategoryName.Trim();
-                    var clower = cname.ToLowerInvariant();
+                    var cname = add.FinalCategoryName.Trim(); var clower = cname.ToLowerInvariant();
                     var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
                     if (cat == null)
                     {
@@ -225,65 +226,15 @@ public class ReceiptEditController : ControllerBase
                     }
                     catId = cat.Id;
                 }
-
                 var nextIndex = (receipt.Lines.Any() ? receipt.Lines.Max(x => (int?)x.SortIndex) ?? -1 : -1) + 1;
                 var newLine = new WIB.Domain.ReceiptLine {
-                    LabelRaw = add.LabelRaw.Trim(),
-                    Qty = qty,
-                    UnitPrice = unitPrice,
-                    LineTotal = lineTotal,
-                    VatRate = add.VatRate,
-                    SortIndex = nextIndex,
-                    ProductId = null,
-                    PredictedCategoryId = catId,
-                    PredictionConfidence = catId.HasValue ? 1.0m : null, PredictedTypeId = typeIdAdd
-                };
-
+                    LabelRaw = add.LabelRaw.Trim(), Qty = qty, UnitPrice = unitPrice, LineTotal = lineTotal, VatRate = add.VatRate,
+                    SortIndex = nextIndex, ProductId = null, PredictedCategoryId = catId, PredictionConfidence = catId.HasValue ? 1.0m : null, PredictedTypeId = typeIdAdd };
                 receipt.Lines.Add(newLine);
-
                 if (catId.HasValue)
                 {
                     var typeId = newLine.PredictedTypeId ?? newLine.Product?.ProductTypeId;
-                    if (typeId.HasValue)
-                    {
-                        feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
-                    }
+                    if (typeId.HasValue) feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
                 }
             }
         }
-
-        if (body.Order != null && body.Order.Count == receipt.Lines.Count)
-        {
-            var current = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
-            // Applica solo se l'array è una permutazione valida degli indici correnti
-            var valid = body.Order.All(i => i >= 0 && i < current.Count) && body.Order.Distinct().Count() == current.Count;
-            if (valid)
-            {
-                for (int newPos = 0; newPos < body.Order.Count; newPos++)
-                {
-                    var origIdx = body.Order[newPos];
-                    current[origIdx].SortIndex = newPos;
-                }
-            }
-        }
-
-        receipt.Total = receipt.Lines.Sum(x => x.LineTotal);
-
-        try
-        {
-            await _db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return Conflict("La ricevuta è stata modificata nel frattempo. Riprova dopo aver ricaricato.");
-        }
-
-        foreach (var target in feedbackTargets)
-        {
-            await _classifier.FeedbackAsync(target.Label, null, target.TypeId, target.CategoryId, ct);
-        }
-
-        return NoContent();
-    }
-}
-
