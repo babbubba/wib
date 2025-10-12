@@ -49,6 +49,7 @@ public class ProcessReceiptCommandHandlerTests
     {
         public Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, CancellationToken ct) => Task.FromResult<(Guid, string)?>(null);
         public Task<string?> CorrectProductLabelAsync(string raw, CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, string? address, string? city, string? vatNumber, CancellationToken ct) => Task.FromResult<(Guid, string)?>(null);
     }
     
     private sealed class StubProductMatcher : IProductMatcher
