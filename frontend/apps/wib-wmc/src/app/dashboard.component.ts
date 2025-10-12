@@ -48,6 +48,9 @@ export class DashboardComponent implements OnInit {
   editCurrency = signal<string>('EUR');
   editLines = signal<Array<{ labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; typeName?: string; typeId?: string|null }>>([]);
   typeSugs = signal<Record<number, { id: string; name: string }[]>>({});
+  // New type creation state
+  newTypeName = signal<string>('');
+  newTypeId = signal<string|undefined>(undefined);
   storeSugs = signal<{ id: string; name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string }[]>([]);
   storeLoading = signal<boolean>(false);
 
@@ -102,7 +105,7 @@ export class DashboardComponent implements OnInit {
     } else { const map = { ...this.typeSugs() }; delete map[index]; this.typeSugs.set(map); }
   }
 
-  ontypeIdChange(index: number, id: string | null) {
+  onTypeIdChange(index: number, id: string | null) {
     const arr = [...this.editLines()];
     const cur = { ...(arr[index] || { labelRaw: '', qty: 1, unitPrice: 0, lineTotal: 0 }) } as any;
     cur['typeId'] = id || null;
@@ -110,15 +113,11 @@ export class DashboardComponent implements OnInit {
     arr[index] = cur; this.editLines.set(arr);
   }
 
-  chooseCategory(i: number, cat: { id: string; name: string }) {
-    const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.typeName = cat.name; linePatch.typeId = cat.id; arr[i] = linePatch; this.editLines.set(arr); const sugg = { ...this.typeSugs() }; delete sugg[i]; this.typeSugs.set(sugg);
-  }
-
   createType(i: number) {
-    const name = i === -1 ? (this.newCatName() || '').toString().trim() : (this.editLines()[i]?.typeName || '').toString().trim();
+    const name = i === -1 ? (this.newTypeName() || '').toString().trim() : (this.editLines()[i]?.typeName || '').toString().trim();
     if (!name) return;
-    this.http.post<any>(`/categories`, { name }).subscribe({
-      next: res => { const createdName = res?.name || name; const createdId = res?.id || null; if (i === -1) { this.newCatName.set(createdName); this.newCatId.set(createdId || undefined); const map = { ...this.typeSugs() }; delete (map as any)[-1]; this.typeSugs.set(map); } else { const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.typeName = createdName; linePatch.typeId = createdId; arr[i] = linePatch; this.editLines.set(arr); const map = { ...this.typeSugs() }; delete map[i]; this.typeSugs.set(map); } },
+    this.http.post<any>(`/producttypes`, { name }).subscribe({
+      next: res => { const createdName = res?.name || name; const createdId = res?.id || null; if (i === -1) { this.newTypeName.set(createdName); this.newTypeId.set(createdId || undefined); const map = { ...this.typeSugs() }; delete (map as any)[-1]; this.typeSugs.set(map); } else { const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.typeName = createdName; linePatch.typeId = createdId; arr[i] = linePatch; this.editLines.set(arr); const map = { ...this.typeSugs() }; delete map[i]; this.typeSugs.set(map); } },
       error: () => {}
     });
   }
@@ -179,22 +178,20 @@ export class DashboardComponent implements OnInit {
   newUnitPrice = signal<number>(0);
   newLineTotal = signal<number>(0);
   newVat = signal<number|null>(null);
-  newCatName = signal<string>('');
-  newCatId = signal<string|undefined>(undefined);
 
   addNewLine() {
     const rec = this.selected(); if (!rec) return;
     const label = (this.newLabel() || '').trim(); if (!label) { this.error.set('Label mancante'); return; }
     let qty = Number(this.newQty()); let unitPrice = Number(this.newUnitPrice()); let lineTotal = Number(this.newLineTotal());
     if (Number.isNaN(qty) || qty <= 0) qty = 1; if (Number.isNaN(unitPrice)) unitPrice = 0; if (Number.isNaN(lineTotal) || lineTotal <= 0) lineTotal = unitPrice * qty;
-    const body: any = { addLines: [{ labelRaw: label, qty, unitPrice, lineTotal, ...(this.newVat() == null ? {} : { vatRate: this.newVat() }), ...(this.newCatId() ? { finaltypeId: this.newCatId() } : {}), ...(((this.newCatName()||'').trim()) ? { finaltypeName: (this.newCatName()||'').trim() } : {}) }] };
+    const body: any = { addLines: [{ labelRaw: label, qty, unitPrice, lineTotal, ...(this.newVat() == null ? {} : { vatRate: this.newVat() }), ...(this.newTypeId() ? { finalTypeId: this.newTypeId() } : {}), ...(((this.newTypeName()||'').trim()) ? { finalTypeName: (this.newTypeName()||'').trim() } : {}) }] };
     this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({ next: () => { this.newLabel.set(''); this.newQty.set(1); this.newUnitPrice.set(0); this.newLineTotal.set(0); this.newVat.set(null); this.newCatName.set(''); this.newCatId.set(undefined); this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any); }, error: e => this.error.set(this.apiErr(e, 'Aggiunta riga fallita')) });
   }
 
   saveEdits() {
     const rec = this.selected(); if (!rec) return;
     const linesPayload: any[] = [];
-    (this.editLines() || []).forEach((l, idx) => { const orig = rec.lines[idx]; const patch: any = { index: idx }; if ((l as any).__remove) { patch.remove = true; linesPayload.push(patch); return; } if (l.labelRaw !== orig.labelRaw) patch.labelRaw = l.labelRaw; if (Number(l.qty) !== Number(orig.qty)) patch.qty = Number(l.qty); if (Number(l.unitPrice) !== Number(orig.unitPrice)) patch.unitPrice = Number(l.unitPrice); if (Number(l.lineTotal) !== Number(orig.lineTotal)) patch.lineTotal = Number(l.lineTotal); if ((l.vatRate ?? null) !== (orig.vatRate ?? null)) patch.vatRate = l.vatRate; if ((l.typeId || null) && String(l.typeId) !== String(orig.typeId||'')) patch.finaltypeId = l.typeId; else if ((l.typeName || '').trim()) patch.finaltypeName = (l.typeName || '').trim(); if (Object.keys(patch).length > 1) linesPayload.push(patch); });
+    (this.editLines() || []).forEach((l, idx) => { const orig = rec.lines[idx]; const patch: any = { index: idx }; if ((l as any).__remove) { patch.remove = true; linesPayload.push(patch); return; } if (l.labelRaw !== orig.labelRaw) patch.labelRaw = l.labelRaw; if (Number(l.qty) !== Number(orig.qty)) patch.qty = Number(l.qty); if (Number(l.unitPrice) !== Number(orig.unitPrice)) patch.unitPrice = Number(l.unitPrice); if (Number(l.lineTotal) !== Number(orig.lineTotal)) patch.lineTotal = Number(l.lineTotal); if ((l.vatRate ?? null) !== (orig.vatRate ?? null)) patch.vatRate = l.vatRate; if ((l.typeId || null) && String(l.typeId) !== String(orig.typeId||'')) patch.finalTypeId = l.typeId; else if ((l.typeName || '').trim()) patch.finalTypeName = (l.typeName || '').trim(); if (Object.keys(patch).length > 1) linesPayload.push(patch); });
     const removedIdx = linesPayload.filter(p => p.remove === true).map(p => p.index);
     let orderForApi = (this.currentOrder() || []).filter(i => removedIdx.indexOf(i) === -1); orderForApi = orderForApi.map(n => Number(n)).filter(n => Number.isInteger(n));
     const body: any = { storeName: this.editStoreName(), storeAddress: this.editStoreAddress(), storeCity: this.editStoreCity(), storePostalCode: this.editStorePostalCode(), storeVatNumber: this.editStoreVatNumber(), currency: this.editCurrency(), lines: linesPayload, order: orderForApi };
