@@ -14,7 +14,7 @@ public class NameMatcher : INameMatcher
     {
         var label = (raw ?? string.Empty).Trim();
         if (label.Length < 3) return null;
-        var canon = Normalize(label);
+        var canon = Normalize(PreNormalize(label));
 
         // Build candidate set from product names and aliases
         var names = await _db.Products.AsNoTracking()
@@ -30,7 +30,7 @@ public class NameMatcher : INameMatcher
         double bestScore = 0;
         foreach (var c in candidates)
         {
-            var score = Similarity(canon, Normalize(c));
+            var score = Similarity(canon, Normalize(PreNormalize(c)));
             if (score > bestScore)
             {
                 bestScore = score;
@@ -38,7 +38,7 @@ public class NameMatcher : INameMatcher
             }
         }
         // Accept only high confidence corrections and when the suggestion is close in length
-        if (best != null && bestScore >= 0.86 && Math.Abs(best.Length - label.Length) <= Math.Max(2, (int)(0.25 * label.Length)))
+        if (best != null && bestScore >= 0.82 && Math.Abs(best.Length - label.Length) <= Math.Max(3, (int)(0.33 * label.Length)))
             return best;
         return null;
     }
@@ -65,12 +65,26 @@ public class NameMatcher : INameMatcher
             }
         }
 
-        if (best.HasValue && bestScore >= 0.86)
+        if (best.HasValue && bestScore >= 0.82)
             return best.Value;
         return null;
     }
 
-    private static readonly Regex MultiWs = new Regex("\\s+", RegexOptions.Compiled);
+        private static string PreNormalize(string s)
+    {
+        s = s.Replace('0', 'o')
+             .Replace('1', 'l')
+             .Replace('5', 's')
+             .Replace('€', 'e');
+        s = s.Replace("rn", "m");
+        s = s.Replace('à', 'a').Replace('á', 'a').Replace('â', 'a').Replace('ä', 'a')
+             .Replace('è', 'e').Replace('é', 'e').Replace('ê', 'e').Replace('ë', 'e')
+             .Replace('ì', 'i').Replace('í', 'i').Replace('î', 'i').Replace('ï', 'i')
+             .Replace('ò', 'o').Replace('ó', 'o').Replace('ô', 'o').Replace('ö', 'o')
+             .Replace('ù', 'u').Replace('ú', 'u').Replace('û', 'u').Replace('ü', 'u')
+             .Replace('ç', 'c');
+        return s;
+    }private static readonly Regex MultiWs = new Regex("\\s+", RegexOptions.Compiled);
     private static string Normalize(string s)
     {
         s = s.ToLowerInvariant();
@@ -110,4 +124,6 @@ public class NameMatcher : INameMatcher
         return d[n, m];
     }
 }
+
+
 
