@@ -1,4 +1,4 @@
-ï»¿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -153,7 +153,7 @@ public class ReceiptEditController : ControllerBase
                 if (patch.VatRate.HasValue)
                     line.VatRate = patch.VatRate.Value;
 
-                if (patch.FinalCategoryId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
+                // Apply Product Type (merceologia) first if provided\n                if (patch.FinalTypeId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalTypeName))\n                {\n                    Guid? typeId = patch.FinalTypeId;\n                    if (!typeId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalTypeName))\n                    {\n                        var tname = patch.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();\n                        var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);\n                        if (t == null) { var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower); t = new WIB.Domain.ProductType { Name = tnorm }; _db.ProductTypes.Add(t); await _db.SaveChangesAsync(ct); }\n                        typeId = t.Id;\n                    }\n                    if (typeId.HasValue) { line.PredictedTypeId = typeId; lineTouched = true; }\n                }\n\n                if (patch.FinalCategoryId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
                 {
                     Guid? catId = patch.FinalCategoryId;
                     if (!catId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
@@ -192,8 +192,7 @@ public class ReceiptEditController : ControllerBase
 
         if (body.AddLines != null && body.AddLines.Count > 0)
         {
-            foreach (var add in body.AddLines)
-            {
+            foreach (var add in body.AddLines) {\n                // Product Type (merceologia) optional creation/assignment\n                Guid? typeIdAdd = add.FinalTypeId;\n                if (!typeIdAdd.HasValue && !string.IsNullOrWhiteSpace(add.FinalTypeName))\n                {\n                    var tname = add.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();\n                    var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);\n                    if (t == null) { var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower); t = new WIB.Domain.ProductType { Name = tnorm }; _db.ProductTypes.Add(t); await _db.SaveChangesAsync(ct); }\n                    typeIdAdd = t.Id;\n                }
                 if (string.IsNullOrWhiteSpace(add.LabelRaw))
                 {
                     return BadRequest("addLines[].labelRaw mancante");
@@ -228,8 +227,7 @@ public class ReceiptEditController : ControllerBase
                 }
 
                 var nextIndex = (receipt.Lines.Any() ? receipt.Lines.Max(x => (int?)x.SortIndex) ?? -1 : -1) + 1;
-                var newLine = new WIB.Domain.ReceiptLine
-                {
+                var newLine = new WIB.Domain.ReceiptLine {
                     LabelRaw = add.LabelRaw.Trim(),
                     Qty = qty,
                     UnitPrice = unitPrice,
@@ -238,7 +236,7 @@ public class ReceiptEditController : ControllerBase
                     SortIndex = nextIndex,
                     ProductId = null,
                     PredictedCategoryId = catId,
-                    PredictionConfidence = catId.HasValue ? 1.0m : null
+                    PredictionConfidence = catId.HasValue ? 1.0m : null, PredictedTypeId = typeIdAdd
                 };
 
                 receipt.Lines.Add(newLine);
@@ -257,7 +255,7 @@ public class ReceiptEditController : ControllerBase
         if (body.Order != null && body.Order.Count == receipt.Lines.Count)
         {
             var current = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
-            // Applica solo se l'array Ã¨ una permutazione valida degli indici correnti
+            // Applica solo se l'array è una permutazione valida degli indici correnti
             var valid = body.Order.All(i => i >= 0 && i < current.Count) && body.Order.Distinct().Count() == current.Count;
             if (valid)
             {
@@ -277,7 +275,7 @@ public class ReceiptEditController : ControllerBase
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Conflict("La ricevuta Ã¨ stata modificata nel frattempo. Riprova dopo aver ricaricato.");
+            return Conflict("La ricevuta è stata modificata nel frattempo. Riprova dopo aver ricaricato.");
         }
 
         foreach (var target in feedbackTargets)
@@ -288,3 +286,4 @@ public class ReceiptEditController : ControllerBase
         return NoContent();
     }
 }
+

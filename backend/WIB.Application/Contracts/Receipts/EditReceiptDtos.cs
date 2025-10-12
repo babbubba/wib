@@ -26,6 +26,8 @@ public class EditReceiptLine
     public decimal? UnitPrice { get; set; }
     public decimal? LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public Guid? FinalTypeId { get; set; }
+    public string? FinalTypeName { get; set; }
     public Guid? FinalCategoryId { get; set; }
     public string? FinalCategoryName { get; set; }
     public string? ProductName { get; set; }
@@ -40,6 +42,8 @@ public class NewReceiptLine
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public Guid? FinalTypeId { get; set; }
+    public string? FinalTypeName { get; set; }
     public Guid? FinalCategoryId { get; set; }
     public string? FinalCategoryName { get; set; }
     public string? ProductName { get; set; }
