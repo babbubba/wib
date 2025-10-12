@@ -167,8 +167,10 @@ export class DashboardComponent implements OnInit {
     this.http.get<Suggestions>(`/api/ml/suggestions`, { params: { labelRaw } }).subscribe({ next: s => this.sugs.set({ ...this.sugs(), [idx]: s }), error: e => this.error.set(e.message || 'Errore') });
   }
 
-  feedback(labelRaw: string, finalTypeId: string | null, finaltypeId: string | null) {
-    const payload: any = { labelRaw }; if (finalTypeId) payload.finalTypeId = finalTypeId; if (finaltypeId) payload.finaltypeId = finaltypeId;
+  feedback(labelRaw: string, finalTypeId: string | null, finalCategoryId: string | null) {
+    const payload: any = { labelRaw };
+    if (finalTypeId) payload.finalTypeId = finalTypeId;
+    if (finalCategoryId) payload.finalCategoryId = finalCategoryId;
     this.http.post(`/api/ml/feedback`, payload).subscribe({ next: () => {}, error: e => this.error.set(e.message || 'Errore') });
   }
 
@@ -185,7 +187,14 @@ export class DashboardComponent implements OnInit {
     let qty = Number(this.newQty()); let unitPrice = Number(this.newUnitPrice()); let lineTotal = Number(this.newLineTotal());
     if (Number.isNaN(qty) || qty <= 0) qty = 1; if (Number.isNaN(unitPrice)) unitPrice = 0; if (Number.isNaN(lineTotal) || lineTotal <= 0) lineTotal = unitPrice * qty;
     const body: any = { addLines: [{ labelRaw: label, qty, unitPrice, lineTotal, ...(this.newVat() == null ? {} : { vatRate: this.newVat() }), ...(this.newTypeId() ? { finalTypeId: this.newTypeId() } : {}), ...(((this.newTypeName()||'').trim()) ? { finalTypeName: (this.newTypeName()||'').trim() } : {}) }] };
-    this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({ next: () => { this.newLabel.set(''); this.newQty.set(1); this.newUnitPrice.set(0); this.newLineTotal.set(0); this.newVat.set(null); this.newCatName.set(''); this.newCatId.set(undefined); this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any); }, error: e => this.error.set(this.apiErr(e, 'Aggiunta riga fallita')) });
+    this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({
+      next: () => {
+        this.newLabel.set(''); this.newQty.set(1); this.newUnitPrice.set(0); this.newLineTotal.set(0); this.newVat.set(null);
+        this.newTypeName.set(''); this.newTypeId.set(undefined);
+        this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any);
+      },
+      error: (e) => this.error.set(this.apiErr(e, 'Aggiunta riga fallita'))
+    });
   }
 
   saveEdits() {

@@ -116,20 +116,20 @@
           <input type="number" step="0.01" class="form-control" [value]="editLines()[i].lineTotal" (focus)="highlightLine(i)" (input)="onLineChange(i,'lineTotal', $any($event.target).value)" />
         </div>
         <div class="col-12 col-md-3">
-          <label class="form-label">Categoria (merceologica)</label>
+          <label class="form-label">Merceologia</label>
           <ng-select
-            [items]="catSugs()[i] || []"
+            [items]="typeSugs()[i] || []"
             bindLabel="name"
             bindValue="id"
             [searchable]="true"
             [clearable]="true"
             [minTermLength]="2"
-            (search)="onCategorySearch(i, $event.term)"
-            [ngModel]="editLines()[i].categoryId || null"
-            (ngModelChange)="onCategoryIdChange(i, $event)">
+            (search)="onTypeSearch(i, $event.term)"
+            [ngModel]="editLines()[i].typeId || null"
+            (ngModelChange)="onTypeIdChange(i, $event)">
           </ng-select>
-          <div class="mt-1" *ngIf="!editLines()[i]?.categoryId && (editLines()[i]?.categoryName || '').length >= 2">
-            <button type="button" class="btn btn-link p-0" (click)="createCategory(i)">Crea "{{ editLines()[i].categoryName }}"</button>
+          <div class="mt-1" *ngIf="!editLines()[i]?.typeId && (editLines()[i]?.typeName || '').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createType(i)">Crea "{{ editLines()[i].typeName }}"</button>
           </div>
         </div>
         <div class="col-6 col-md-1">
@@ -180,20 +180,20 @@
           <input type="number" step="0.01" class="form-control" [value]="newVat() || ''" (input)="newVat.set(+$any($event.target).value)" />
         </div>
         <div class="col-12 col-md-4">
-          <label class="form-label">Categoria (merceologica)</label>
+          <label class="form-label">Merceologia</label>
           <ng-select
-            [items]="catSugs()[-1] || []"
+            [items]="typeSugs()[-1] || []"
             bindLabel="name"
             bindValue="id"
             [searchable]="true"
             [clearable]="true"
             [minTermLength]="2"
-            (search)="onCategorySearch(-1, $event.term); newCatName.set(($event.term||'').toString()); newCatId.set(undefined)"
-            [ngModel]="newCatId() || null"
-            (ngModelChange)="newCatId.set($event)">
+            (search)="onTypeSearch(-1, $event.term); newTypeName.set(($event.term||'').toString()); newTypeId.set(undefined)"
+            [ngModel]="newTypeId() || null"
+            (ngModelChange)="newTypeId.set($event)">
           </ng-select>
-          <div class="mt-1" *ngIf="!newCatId() && (newCatName()||'').length >= 2">
-            <button type="button" class="btn btn-link p-0" (click)="createCategory(-1)">Crea "{{ newCatName() }}"</button>
+          <div class="mt-1" *ngIf="!newTypeId() && (newTypeName()||'').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createType(-1)">Crea "{{ newTypeName() }}"</button>
           </div>
         </div>
         <div class="col-12 col-md-2 d-grid">

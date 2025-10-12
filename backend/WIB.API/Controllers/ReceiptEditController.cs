@@ -4,162 +4,175 @@ using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using WIB.Application.Contracts.Receipts;
 using WIB.Application.Interfaces;
 using WIB.Infrastructure.Data;
 
-namespace WIB.API.Controllers;
-
-[ApiController]
-[Authorize(Roles = "wmc")]
-[Route("receipts")]
-public class ReceiptEditController : ControllerBase
+namespace WIB.API.Controllers
 {
-    private readonly WibDbContext _db;
-    private readonly IProductClassifier _classifier;
-
-    public ReceiptEditController(WibDbContext db, IProductClassifier classifier)
+    [ApiController]
+    [Authorize(Roles = "wmc")]
+    [Route("receipts")]
+    public class ReceiptEditController : ControllerBase
     {
-        _db = db;
-        _classifier = classifier;
-    }
+        private readonly WibDbContext _db;
+        private readonly IProductClassifier _classifier;
 
-    [HttpPost("{id:guid}/edit")]
-    public async Task<IActionResult> Edit(Guid id, [FromBody] EditReceiptRequest body, CancellationToken ct)
-    {
-        var receipt = await _db.Receipts
-            .Include(r => r.Store)
-            .Include(r => r.StoreLocation)
-            .Include(r => r.Lines)
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (receipt == null)
-            return NotFound();
-
-        var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
-
-        if (!string.IsNullOrWhiteSpace(body.StoreName))
+        public ReceiptEditController(WibDbContext db, IProductClassifier classifier)
         {
-            var name = body.StoreName.Trim();
-            var lower = name.ToLowerInvariant();
-            var store = await _db.Stores.FirstOrDefaultAsync(s => s.Name.ToLower() == lower, ct);
-            if (store == null)
-            {
-                var norm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
-                store = new WIB.Domain.Store { Name = norm };
-                _db.Stores.Add(store);
-                await _db.SaveChangesAsync(ct);
-            }
-
-            receipt.StoreId = store.Id;
-            receipt.Store = store;
+            _db = db;
+            _classifier = classifier;
         }
 
-        if (body.Datetime.HasValue)
-            receipt.Date = body.Datetime.Value;
-
-        if (!string.IsNullOrWhiteSpace(body.Currency))
-            receipt.Currency = body.Currency!;
-
-        if (!string.IsNullOrWhiteSpace(body.StoreAddress)
-            || !string.IsNullOrWhiteSpace(body.StoreCity)
-            || !string.IsNullOrWhiteSpace(body.StorePostalCode)
-            || !string.IsNullOrWhiteSpace(body.StoreVatNumber))
+        [HttpPost("{id:guid}/edit")]
+        public async Task<IActionResult> Edit(Guid id, [FromBody] EditReceiptRequest body, CancellationToken ct)
         {
-            var addr = body.StoreAddress?.Trim();
-            var city = body.StoreCity?.Trim();
-            var cap = body.StorePostalCode?.Trim();
-            var vat = body.StoreVatNumber?.Trim();
+            var receipt = await _db.Receipts
+                .Include(r => r.Store)
+                .Include(r => r.StoreLocation)
+                .Include(r => r.Lines)
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (receipt == null) return NotFound();
 
-            var existingLocation = await _db.StoreLocations.FirstOrDefaultAsync(
-                sl => sl.StoreId == receipt.StoreId
-                    && sl.Address == addr
-                    && sl.City == city
-                    && sl.PostalCode == cap,
-                ct);
+            var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
 
-            if (existingLocation == null)
+            if (!string.IsNullOrWhiteSpace(body.StoreName))
             {
-                existingLocation = new WIB.Domain.StoreLocation
+                var lower = body.StoreName.Trim().ToLowerInvariant();
+                var store = await _db.Stores.FirstOrDefaultAsync(s => s.Name.ToLower() == lower, ct);
+                if (store == null)
                 {
-                    StoreId = receipt.StoreId,
-                    Address = addr,
-                    City = city,
-                    PostalCode = cap,
-                    VatNumber = vat
-                };
-                _db.StoreLocations.Add(existingLocation);
-                await _db.SaveChangesAsync(ct);
-            }
-            else if (!string.IsNullOrWhiteSpace(vat))
-            {
-                existingLocation.VatNumber = vat;
-            }
-
-            receipt.StoreLocationId = existingLocation.Id;
-            receipt.StoreLocation = existingLocation;
-        }
-
-        if (body.Lines != null && body.Lines.Count > 0)
-        {
-            var arr = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
-            var removals = body.Lines.Where(p => p.Remove == true).OrderByDescending(p => p.Index).ToList();
-            foreach (var rm in removals)
-            {
-                if (rm.Index >= 0 && rm.Index < arr.Count)
-                {
-                    var line = arr[rm.Index];
-                    receipt.Lines.Remove(line);
-                    arr.RemoveAt(rm.Index);
+                    var norm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
+                    store = new WIB.Domain.Store { Name = norm };
+                    _db.Stores.Add(store);
+                    await _db.SaveChangesAsync(ct);
                 }
+                receipt.StoreId = store.Id;
+                receipt.Store = store;
             }
 
-            foreach (var patch in body.Lines.Where(p => p.Remove != true))
+            if (body.Datetime.HasValue) receipt.Date = body.Datetime.Value;
+            if (!string.IsNullOrWhiteSpace(body.Currency)) receipt.Currency = body.Currency!;
+
+            if (!string.IsNullOrWhiteSpace(body.StoreAddress) || !string.IsNullOrWhiteSpace(body.StoreCity) || !string.IsNullOrWhiteSpace(body.StorePostalCode) || !string.IsNullOrWhiteSpace(body.StoreVatNumber))
             {
-                if (patch.Index < 0 || patch.Index >= arr.Count)
-                    continue;
-
-                var line = arr[patch.Index];
-                var originalLabel = line.LabelRaw;
-                var lineTouched = false;
-
-                if (!string.IsNullOrWhiteSpace(patch.LabelRaw))
+                var addr = body.StoreAddress?.Trim();
+                var city = body.StoreCity?.Trim();
+                var cap = body.StorePostalCode?.Trim();
+                var vat = body.StoreVatNumber?.Trim();
+                var existingLocation = await _db.StoreLocations.FirstOrDefaultAsync(sl => sl.StoreId == receipt.StoreId && sl.Address == addr && sl.City == city && sl.PostalCode == cap, ct);
+                if (existingLocation == null)
                 {
-                    var updated = patch.LabelRaw.Trim();
-                    if (!string.Equals(updated, originalLabel, StringComparison.Ordinal))
+                    existingLocation = new WIB.Domain.StoreLocation { StoreId = receipt.StoreId, Address = addr, City = city, PostalCode = cap, VatNumber = vat };
+                    _db.StoreLocations.Add(existingLocation);
+                    await _db.SaveChangesAsync(ct);
+                }
+                else if (!string.IsNullOrWhiteSpace(vat)) existingLocation.VatNumber = vat;
+                receipt.StoreLocationId = existingLocation.Id;
+                receipt.StoreLocation = existingLocation;
+            }
+
+            if (body.Lines != null && body.Lines.Count > 0)
+            {
+                var arr = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
+                var removals = body.Lines.Where(p => p.Remove == true).OrderByDescending(p => p.Index).ToList();
+                foreach (var rm in removals)
+                {
+                    if (rm.Index >= 0 && rm.Index < arr.Count)
                     {
-                        line.LabelRaw = updated;
-                        lineTouched = true;
+                        var line = arr[rm.Index];
+                        receipt.Lines.Remove(line);
+                        arr.RemoveAt(rm.Index);
                     }
                 }
-
-                if (patch.Qty.HasValue)
+                foreach (var patch in body.Lines.Where(p => p.Remove != true))
                 {
-                    line.Qty = patch.Qty.Value;
-                    lineTouched = true;
-                }
-
-                if (patch.UnitPrice.HasValue)
-                {
-                    line.UnitPrice = patch.UnitPrice.Value;
-                    lineTouched = true;
-                }
-
-                if (patch.LineTotal.HasValue)
-                {
-                    line.LineTotal = patch.LineTotal.Value;
-                    lineTouched = true;
-                }
-
-                if (patch.VatRate.HasValue)
-                    line.VatRate = patch.VatRate.Value;
-
-                // Apply Product Type (merceologia) first if provided\n                if (patch.FinalTypeId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalTypeName))\n                {\n                    Guid? typeId = patch.FinalTypeId;\n                    if (!typeId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalTypeName))\n                    {\n                        var tname = patch.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();\n                        var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);\n                        if (t == null) { var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower); t = new WIB.Domain.ProductType { Name = tnorm }; _db.ProductTypes.Add(t); await _db.SaveChangesAsync(ct); }\n                        typeId = t.Id;\n                    }\n                    if (typeId.HasValue) { line.PredictedTypeId = typeId; lineTouched = true; }\n                }\n\n                if (patch.FinalCategoryId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
-                {
-                    Guid? catId = patch.FinalCategoryId;
-                    if (!catId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
+                    if (patch.Index < 0 || patch.Index >= arr.Count) continue;
+                    var line = arr[patch.Index];
+                    var originalLabel = line.LabelRaw;
+                    var lineTouched = false;
+                    if (!string.IsNullOrWhiteSpace(patch.LabelRaw))
                     {
-                        var cname = patch.FinalCategoryName.Trim();
-                        var clower = cname.ToLowerInvariant();
+                        var updated = patch.LabelRaw.Trim();
+                        if (!string.Equals(updated, originalLabel, StringComparison.Ordinal)) line.LabelRaw = updated;
+                    }
+                    if (patch.Qty.HasValue) { line.Qty = patch.Qty.Value; lineTouched = true; }
+                    if (patch.UnitPrice.HasValue) { line.UnitPrice = patch.UnitPrice.Value; lineTouched = true; }
+                    if (patch.LineTotal.HasValue) { line.LineTotal = patch.LineTotal.Value; lineTouched = true; }
+                    if (patch.VatRate.HasValue) line.VatRate = patch.VatRate.Value;
+                    if (patch.FinalTypeId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalTypeName))
+                    {
+                        Guid? typeId = patch.FinalTypeId;
+                        if (!typeId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalTypeName))
+                        {
+                            var tlower = patch.FinalTypeName.Trim().ToLowerInvariant();
+                            var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);
+                            if (t == null)
+                            {
+                                var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower);
+                                t = new WIB.Domain.ProductType { Name = tnorm };
+                                _db.ProductTypes.Add(t);
+                                await _db.SaveChangesAsync(ct);
+                            }
+                            typeId = t.Id;
+                        }
+                        if (typeId.HasValue) { line.PredictedTypeId = typeId; lineTouched = true; }
+                    }
+                    if (patch.FinalCategoryId.HasValue || !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
+                    {
+                        Guid? catId = patch.FinalCategoryId;
+                        if (!catId.HasValue && !string.IsNullOrWhiteSpace(patch.FinalCategoryName))
+                        {
+                            var clower = patch.FinalCategoryName.Trim().ToLowerInvariant();
+                            var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
+                            if (cat == null)
+                            {
+                                var cnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(clower);
+                                cat = new WIB.Domain.Category { Name = cnorm };
+                                _db.Categories.Add(cat);
+                                await _db.SaveChangesAsync(ct);
+                            }
+                            catId = cat.Id;
+                        }
+                        if (catId.HasValue) { line.PredictedCategoryId = catId; line.PredictionConfidence = 1.0m; lineTouched = true; }
+                    }
+                    if (lineTouched && line.PredictedCategoryId.HasValue)
+                    {
+                        var typeId = line.PredictedTypeId ?? line.Product?.ProductTypeId;
+                        if (typeId.HasValue) feedbackTargets.Add((line.LabelRaw, typeId.Value, line.PredictedCategoryId.Value));
+                    }
+                }
+            }
+
+            if (body.AddLines != null && body.AddLines.Count > 0)
+            {
+                foreach (var add in body.AddLines)
+                {
+                    Guid? typeIdAdd = add.FinalTypeId;
+                    if (!typeIdAdd.HasValue && !string.IsNullOrWhiteSpace(add.FinalTypeName))
+                    {
+                        var tlower = add.FinalTypeName.Trim().ToLowerInvariant();
+                        var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);
+                        if (t == null)
+                        {
+                            var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower);
+                            t = new WIB.Domain.ProductType { Name = tnorm };
+                            _db.ProductTypes.Add(t);
+                            await _db.SaveChangesAsync(ct);
+                        }
+                        typeIdAdd = t.Id;
+                    }
+                    if (string.IsNullOrWhiteSpace(add.LabelRaw)) return BadRequest("addLines[].labelRaw mancante");
+                    var qty = add.Qty; var unitPrice = add.UnitPrice; var lineTotal = add.LineTotal;
+                    if (qty <= 0 && unitPrice >= 0 && lineTotal == 0) qty = 1;
+                    if (lineTotal == 0 && unitPrice >= 0 && qty >= 0) lineTotal = unitPrice * qty;
+                    Guid? catId = add.FinalCategoryId;
+                    if (!catId.HasValue && !string.IsNullOrWhiteSpace(add.FinalCategoryName))
+                    {
+                        var clower = add.FinalCategoryName.Trim().ToLowerInvariant();
                         var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
                         if (cat == null)
                         {
@@ -170,71 +183,40 @@ public class ReceiptEditController : ControllerBase
                         }
                         catId = cat.Id;
                     }
-
+                    var nextIndex = (receipt.Lines.Any() ? receipt.Lines.Max(x => (int?)x.SortIndex) ?? -1 : -1) + 1;
+                    var newLine = new WIB.Domain.ReceiptLine
+                    {
+                        LabelRaw = add.LabelRaw.Trim(), Qty = qty, UnitPrice = unitPrice, LineTotal = lineTotal, VatRate = add.VatRate,
+                        SortIndex = nextIndex, ProductId = null, PredictedCategoryId = catId, PredictionConfidence = catId.HasValue ? 1.0m : null, PredictedTypeId = typeIdAdd
+                    };
+                    receipt.Lines.Add(newLine);
                     if (catId.HasValue)
                     {
-                        line.PredictedCategoryId = catId;
-                        line.PredictionConfidence = 1.0m;
-                        lineTouched = true;
-                    }
-                }
-
-                if (lineTouched && line.PredictedCategoryId.HasValue)
-                {
-                    var typeId = line.PredictedTypeId ?? line.Product?.ProductTypeId;
-                    if (typeId.HasValue)
-                    {
-                        feedbackTargets.Add((line.LabelRaw, typeId.Value, line.PredictedCategoryId.Value));
+                        var typeId = newLine.PredictedTypeId ?? newLine.Product?.ProductTypeId;
+                        if (typeId.HasValue) feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
                     }
                 }
             }
-        }
 
-                if (body.AddLines != null && body.AddLines.Count > 0)
-        {
-            foreach (var add in body.AddLines)
+            if (body.Order != null && body.Order.Count == receipt.Lines.Count)
             {
-                Guid? typeIdAdd = add.FinalTypeId;
-                if (!typeIdAdd.HasValue && !string.IsNullOrWhiteSpace(add.FinalTypeName))
+                var current = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
+                var valid = body.Order.All(i => i >= 0 && i < current.Count) && body.Order.Distinct().Count() == current.Count;
+                if (valid)
                 {
-                    var tname = add.FinalTypeName.Trim(); var tlower = tname.ToLowerInvariant();
-                    var t = await _db.ProductTypes.FirstOrDefaultAsync(t => t.Name.ToLower() == tlower, ct);
-                    if (t == null)
+                    for (int newPos = 0; newPos < body.Order.Count; newPos++)
                     {
-                        var tnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(tlower);
-                        t = new WIB.Domain.ProductType { Name = tnorm };
-                        _db.ProductTypes.Add(t);
-                        await _db.SaveChangesAsync(ct);
+                        var origIdx = body.Order[newPos];
+                        current[origIdx].SortIndex = newPos;
                     }
-                    typeIdAdd = t.Id;
-                }
-                if (string.IsNullOrWhiteSpace(add.LabelRaw)) return BadRequest("addLines[].labelRaw mancante");
-                var qty = add.Qty; var unitPrice = add.UnitPrice; var lineTotal = add.LineTotal;
-                if (qty <= 0 && unitPrice >= 0 && lineTotal == 0) qty = 1;
-                if (lineTotal == 0 && unitPrice >= 0 && qty >= 0) lineTotal = unitPrice * qty;
-                Guid? catId = add.FinalCategoryId;
-                if (!catId.HasValue && !string.IsNullOrWhiteSpace(add.FinalCategoryName))
-                {
-                    var cname = add.FinalCategoryName.Trim(); var clower = cname.ToLowerInvariant();
-                    var cat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == clower, ct);
-                    if (cat == null)
-                    {
-                        var cnorm = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(clower);
-                        cat = new WIB.Domain.Category { Name = cnorm };
-                        _db.Categories.Add(cat);
-                        await _db.SaveChangesAsync(ct);
-                    }
-                    catId = cat.Id;
-                }
-                var nextIndex = (receipt.Lines.Any() ? receipt.Lines.Max(x => (int?)x.SortIndex) ?? -1 : -1) + 1;
-                var newLine = new WIB.Domain.ReceiptLine {
-                    LabelRaw = add.LabelRaw.Trim(), Qty = qty, UnitPrice = unitPrice, LineTotal = lineTotal, VatRate = add.VatRate,
-                    SortIndex = nextIndex, ProductId = null, PredictedCategoryId = catId, PredictionConfidence = catId.HasValue ? 1.0m : null, PredictedTypeId = typeIdAdd };
-                receipt.Lines.Add(newLine);
-                if (catId.HasValue)
-                {
-                    var typeId = newLine.PredictedTypeId ?? newLine.Product?.ProductTypeId;
-                    if (typeId.HasValue) feedbackTargets.Add((newLine.LabelRaw, typeId.Value, catId.Value));
                 }
             }
+
+            receipt.Total = receipt.Lines.Sum(x => x.LineTotal);
+            await _db.SaveChangesAsync(ct);
+            foreach (var target in feedbackTargets)
+                await _classifier.FeedbackAsync(target.Label, null, target.TypeId, target.CategoryId, ct);
+            return NoContent();
         }
+    }
+}
