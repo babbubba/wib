@@ -86,8 +86,8 @@ public class ProcessReceiptCommandHandler
 
         var idx = 0;
         foreach (var l in kie.Lines)
-        {
-            var corrected = await _names.CorrectProductLabelAsync(l.LabelRaw, ct);
+            if (LooksLikeTotalOrPayment(l.LabelRaw))
+                continue;
             var labelRaw = corrected ?? l.LabelRaw;
             var (typeId, categoryId, confidence) = await _classifier.PredictAsync(l.LabelRaw, ct);
             receipt.Lines.Add(new WIB.Domain.ReceiptLine
@@ -118,5 +118,16 @@ public class ProcessReceiptCommandHandler
 
         // TODO: classificazione prodotti e popolamento ProductId
         await _storage.SaveAsync(receipt, ct);
+
+    private static bool LooksLikeTotalOrPayment(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label)) return false;
+        var s = label.Trim().ToLowerInvariant();
+        if (s.Contains("totale") || s.Contains("subtotale") || s.Contains("pagato") || s.Contains("contante") || s.Contains("resto") || s.Contains("iban") || s.Contains("carta") || s.Contains("tessera") || s.Contains("sconto"))
+            return true;
+        bool anyLetter = false; foreach (var ch in s) { if (char.IsLetter(ch)) { anyLetter = true; break; } }
+        if (!anyLetter) return true;
+        return false;
+    }
     }
 }
