@@ -2,12 +2,12 @@
 
 ## Avvio Rapido
 
-- Requisiti: Docker Desktop attivo (Linux containers), Node 20.x, .NET SDK 9 (per build locali).
+- Requisiti: Docker Desktop attivo (Linux containers), Node 20.x, .NET SDK 8+ (repo pinnato a SDK 9 via `global.json`, target `net8.0`).
 - Avvio stack locale (API, Worker, DB, Redis, MinIO, OCR, ML, Proxy):
   - `docker compose up -d --build`
 - Test locali (opzionali):
   - .NET: `dotnet build backend/WIB.sln && dotnet test backend/WIB.Tests/WIB.Tests.csproj`
-  - Python: `python -m pytest services/ocr/tests services/ml/tests`
+  - Python (PowerShell): `python -m pytest services\ocr\tests services\ml\tests`
 - Frontend DEV (Angular):
   - Devices (upload): `npm install --prefix frontend && npm run start:devices --prefix frontend` → http://localhost:4200
   - WMC (analytics/review): `npm run start:wmc --prefix frontend` → http://localhost:4201
@@ -449,3 +449,39 @@ Verifiche manuali utili:
 - scikit‑learn: libreria ML Python (TF‑IDF, SGDClassifier, ecc.).
 - Joblib: utility per serializzare/persistire modelli e vettorizzatori scikit‑learn.
 - Qdrant: database vettoriale per similitudine/ricerca per embedding (opzionale nello stack).
+
+## Repository Guidelines (Sintesi)
+
+- Struttura
+  - `backend/` (.NET 8): `WIB.API` (REST), `WIB.Worker` (background), librerie `WIB.*`, test `backend/WIB.Tests`, soluzione `backend/WIB.sln`.
+  - `frontend/` (Angular 19): app `wib-devices` e `wib-wmc` in `frontend/apps/*/src`.
+  - `services/` (FastAPI): `ocr/` e `ml/` con `main.py`, `Dockerfile`, `requirements.txt`, test in `services/*/tests`.
+  - `proxy/` (nginx), `docker-compose.yml` (stack locale), `scripts/` (helper), `docs/` (dati/strumenti).
+
+- Comandi principali
+  - Full stack: `docker compose up -d --build` → proxy `http://localhost:8085`.
+  - Backend: `dotnet build backend/WIB.sln`, test `dotnet test backend/WIB.Tests/WIB.Tests.csproj`, run API `dotnet run --project backend/WIB.API`, run worker `dotnet run --project backend/WIB.Worker`.
+  - Frontend: `npm install --prefix frontend`, dev `npm run start:devices|start:wmc --prefix frontend`, build `npm run build:devices|build:wmc`.
+  - Python: `python -m pip install -r services/ocr/requirements.txt` (e per `ml`), test `python -m pytest services\ocr\tests services\ml\tests`.
+
+- Stile/Coding
+  - C#: indent 4 spazi; PascalCase per tipi/metodi, camelCase per variabili/campi; 1 classe per file in `WIB.*`.
+  - TypeScript/Angular: indent 2 spazi; file `*.component.ts|html|css`; preferire template/style URLs.
+  - Python: PEP 8 (4 spazi), type hints ove pratico; test `test_*.py`.
+
+- Testing
+  - Backend: xUnit; coverage `dotnet test /p:CollectCoverage=true` (coverlet). Aggiungere test per nuovi handler/controller.
+  - Frontend: Jasmine/Karma (`npm run test:devices|test:wmc --prefix frontend`).
+  - Python: pytest in `services/*/tests`.
+
+- Sicurezza/Config
+  - Env annidate con `__` (es.: `ConnectionStrings__Default`, `Ocr__Endpoint`, `Ml__Endpoint`, `Auth__Key`).
+  - Niente segreti in repo; montare dati/modelli sotto `.data/`. Porte: API 8080, OCR 8081, ML 8082, Proxy 8085.
+
+## Direttive Windows 11 (PowerShell)
+
+- Usare PowerShell, non sintassi Bash (`export`, `&&`, `VAR=cmd`).
+- Variabili d'ambiente nella stessa sessione: `$env:KEY = 'value'`.
+- Docker locale: `docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`.
+- Preferire rebuild selettivi/restart: `docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`; usare `--no-cache` solo se necessario.
+- HTTP client: `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl`).
