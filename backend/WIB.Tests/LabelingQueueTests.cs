@@ -22,6 +22,7 @@ public class LabelingQueueTests
     {
         public Task<string> SaveAsync(Stream image, string? contentType, CancellationToken ct) => Task.FromResult("obj");
         public Task<Stream> GetAsync(string objectKey, CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream());
+        public Task DeleteAsync(string objectKey, CancellationToken ct) => Task.CompletedTask;
     }
 
     [Fact]

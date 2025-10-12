@@ -20,12 +20,12 @@ public class MlController : ControllerBase
     [HttpGet("suggestions")]
     public async Task<ActionResult<MlSuggestionsResponse>> Suggestions([FromQuery] string labelRaw, CancellationToken ct)
     {
-        var (typeId, catId, conf) = await _cls.PredictAsync(labelRaw, ct);
+        var pred = await _cls.PredictAsync(labelRaw, ct);
         var res = new MlSuggestionsResponse();
-        if (typeId.HasValue)
-            res.TypeCandidates.Add(new MlCandidateDto { Id = typeId.Value, Name = string.Empty, Conf = conf });
-        if (catId.HasValue)
-            res.CategoryCandidates.Add(new MlCandidateDto { Id = catId.Value, Name = string.Empty, Conf = conf });
+        if (pred.TypeId.HasValue)
+            res.TypeCandidates.Add(new MlCandidateDto { Id = pred.TypeId.Value, Name = string.Empty, Conf = pred.Confidence });
+        if (pred.CategoryId.HasValue)
+            res.CategoryCandidates.Add(new MlCandidateDto { Id = pred.CategoryId.Value, Name = string.Empty, Conf = pred.Confidence });
         return Ok(res);
     }
 

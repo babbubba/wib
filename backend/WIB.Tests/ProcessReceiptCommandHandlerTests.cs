@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using WIB.Application.Contracts.Ml;
 using WIB.Application.Interfaces;
 using WIB.Application.Receipts;
 using WIB.Infrastructure.Clients;
@@ -33,7 +34,8 @@ public class ProcessReceiptCommandHandlerTests
     }
     private sealed class StubClf : IProductClassifier
     {
-        public Task<(Guid? TypeId, Guid? CategoryId, float Confidence)> PredictAsync(string labelRaw, CancellationToken ct) => Task.FromResult<(Guid?, Guid?, float)>((null, null, 0f));
+        public Task<MlPredictionResult> PredictAsync(string labelRaw, CancellationToken ct) => 
+            Task.FromResult(new MlPredictionResult { TypeId = null, CategoryId = null, Confidence = 0f });
         public Task FeedbackAsync(string labelRaw, string? brand, Guid typeId, Guid? categoryId, CancellationToken ct) => Task.CompletedTask;
     }
     private sealed class StubImg : IImageStorage
@@ -41,6 +43,11 @@ public class ProcessReceiptCommandHandlerTests
         public Task<string> SaveAsync(Stream image, string? contentType, CancellationToken ct) => Task.FromResult("2025/01/01/test.jpg");
         public Task<Stream> GetAsync(string objectKey, CancellationToken ct) => Task.FromResult<Stream>(new MemoryStream(new byte[] { 1 }));
         public Task DeleteAsync(string objectKey, CancellationToken ct) => Task.CompletedTask;
+    }
+    private sealed class StubNames : INameMatcher
+    {
+        public Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, CancellationToken ct) => Task.FromResult<(Guid, string)?>(null);
+        public Task<string?> CorrectProductLabelAsync(string raw, CancellationToken ct) => Task.FromResult<string?>(null);
     }
 
     [Fact]
@@ -52,7 +59,7 @@ public class ProcessReceiptCommandHandlerTests
         await using var db = new WibDbContext(options);
 
         var storage = new ReceiptStorage(db);
-        var handler = new ProcessReceiptCommandHandler(new StubOcr(), new StubKie(), new StubClf(), storage, new StubImg());
+        var handler = new ProcessReceiptCommandHandler(new StubOcr(), new StubKie(), new StubClf(), storage, new StubImg(), new StubNames());
 
         using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
         await handler.Handle(new ProcessReceiptCommand(ms), CancellationToken.None);
