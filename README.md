@@ -11,7 +11,21 @@
 - Frontend DEV (Angular):
   - Devices (upload): `npm install --prefix frontend && npm run start:devices --prefix frontend` â†’ http://localhost:4200
   - WMC (analytics/review): `npm run start:wmc --prefix frontend` â†’ http://localhost:4201
-  - Proxy unico per API: http://localhost:8085
+  - Proxy unico per API:
+## Aggiornamenti Recenti
+
+- Upload più robusto e veloce
+  - Limiti innalzati a 20 MB su proxy e web-frontend (client_max_body_size 20m) e lato API (RequestSizeLimit e FormOptions.MultipartBodyLengthLimit).
+  - L'upload non fallisce più se la coda Redis non è disponibile: l'immagine viene comunque salvata (202). È possibile riaccodare da WMC (Queue) quando Redis torna disponibile.
+- Devices: caricamenti sequenziali rapidi
+  - Switch “Modalità sequenziale”: avvia l'upload subito dopo lo scatto/selezione e, a completamento, propone subito il prossimo scatto.
+  - Pulsante “Prossimo scontrino” post–successo per passare velocemente alla foto successiva.
+- WMC: coda e modifica scontrini
+  - La pagina Queue non mostra più le chiavi già processate (evita duplicati “in coda” e “già processati”).
+  - Migliorata l'API di editing: validazione addLines, normalizzazione numeri, riordino sicuro, gestione concorrenza (409) e messaggi chiari lato UI (400/409).
+- Build consigliato dopo l'aggiornamento
+  - docker compose build proxy web-devices web-wmc api && docker compose up -d proxy web-devices web-wmc api
+  - In dev Angular, se usi ng serve, non serve rebuild Docker ma ricorda i limiti aggiornati lato API. http://localhost:8085
   - Nota: il dev proxy Angular (`frontend/proxy.conf.json`) inoltra ora anche `/auth` e `/ml` verso `http://localhost:8080` per supportare login e suggerimenti ML in sviluppo.
 
 **Elaborazione Scontrini (panoramica rapida)**
@@ -485,3 +499,4 @@ Verifiche manuali utili:
 - Docker locale: `docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`.
 - Preferire rebuild selettivi/restart: `docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`; usare `--no-cache` solo se necessario.
 - HTTP client: `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl`).
+
