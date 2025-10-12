@@ -13,6 +13,14 @@
   - WMC (analytics/review): `npm run start:wmc --prefix frontend` â†’ http://localhost:4201
   - Proxy unico per API:
 ## Aggiornamenti Recenti
+- Build consigliato dopo l'aggiornamento
+  - Ogni modifica va testata ricostruendo l'immagine/servizio interessato:
+    - API (.NET): `docker compose build api && docker compose up -d api`
+    - Worker (.NET): `docker compose build worker && docker compose up -d worker`
+    - Proxy (nginx): `docker compose build proxy && docker compose up -d proxy`
+    - Web Devices/WMC: `docker compose build web-devices web-wmc && docker compose up -d web-devices web-wmc`
+  - Esempio completo: `docker compose build proxy web-devices web-wmc api worker && docker compose up -d`
+  - In dev Angular (ng serve), non serve rebuild Docker: riavvia comunque l'API se hai toccato il backend.
 
 - Upload più robusto e veloce
   - Limiti innalzati a 20 MB su proxy e web-frontend (client_max_body_size 20m) e lato API (RequestSizeLimit e FormOptions.MultipartBodyLengthLimit).
@@ -499,4 +507,5 @@ Verifiche manuali utili:
 - Docker locale: `docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`.
 - Preferire rebuild selettivi/restart: `docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`; usare `--no-cache` solo se necessario.
 - HTTP client: `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl`).
+
 
