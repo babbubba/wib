@@ -24,6 +24,7 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
 builder.Services.AddScoped<INameMatcher, NameMatcher>();
+builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 builder.Services.AddScoped<ReceiptProcessor>();
 builder.Services.AddHostedService<Worker>();

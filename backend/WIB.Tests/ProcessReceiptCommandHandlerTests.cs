@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using WIB.Application.Contracts.Ml;
 using WIB.Application.Interfaces;
 using WIB.Application.Receipts;
+using WIB.Domain;
 using WIB.Infrastructure.Clients;
 using WIB.Infrastructure.Data;
 using Xunit;
@@ -49,6 +50,18 @@ public class ProcessReceiptCommandHandlerTests
         public Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, CancellationToken ct) => Task.FromResult<(Guid, string)?>(null);
         public Task<string?> CorrectProductLabelAsync(string raw, CancellationToken ct) => Task.FromResult<string?>(null);
     }
+    
+    private sealed class StubProductMatcher : IProductMatcher
+    {
+        public Task<ProductMatch?> FindOrCreateProductAsync(string labelRaw, string? brand, Guid? predictedTypeId, Guid? predictedCategoryId, float confidence, float confidenceThreshold = 0.8f, CancellationToken ct = default)
+            => Task.FromResult<ProductMatch?>(null); // No product matching in tests
+            
+        public Task<Product> CreateProductAsync(string name, string? brand, Guid? productTypeId, Guid? categoryId, string? gtin = null, CancellationToken ct = default)
+            => Task.FromResult(new Product { Id = Guid.NewGuid(), Name = name, Brand = brand, ProductTypeId = productTypeId ?? Guid.NewGuid(), CategoryId = categoryId });
+            
+        public Task<List<Product>> FindSimilarProductsAsync(string labelRaw, Guid? typeId, Guid? categoryId, int maxResults = 5, CancellationToken ct = default)
+            => Task.FromResult(new List<Product>());
+    }
 
     [Fact]
     public async Task Handle_Saves_Image_And_Receipt()
@@ -59,7 +72,7 @@ public class ProcessReceiptCommandHandlerTests
         await using var db = new WibDbContext(options);
 
         var storage = new ReceiptStorage(db);
-        var handler = new ProcessReceiptCommandHandler(new StubOcr(), new StubKie(), new StubClf(), storage, new StubImg(), new StubNames());
+        var handler = new ProcessReceiptCommandHandler(new StubOcr(), new StubKie(), new StubClf(), storage, new StubImg(), new StubNames(), new StubProductMatcher());
 
         using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
         await handler.Handle(new ProcessReceiptCommand(ms), CancellationToken.None);

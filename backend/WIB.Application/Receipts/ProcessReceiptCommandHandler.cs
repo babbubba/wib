@@ -15,8 +15,16 @@ namespace WIB.Application.Receipts
         private readonly IReceiptStorage _storage;
         private readonly INameMatcher _names;
         private readonly IImageStorage _imageStorage;
+        private readonly IProductMatcher _productMatcher;
 
-        public ProcessReceiptCommandHandler(IOcrClient ocr, IKieClient kie, IProductClassifier classifier, IReceiptStorage storage, IImageStorage imageStorage, INameMatcher names)
+        public ProcessReceiptCommandHandler(
+            IOcrClient ocr, 
+            IKieClient kie, 
+            IProductClassifier classifier, 
+            IReceiptStorage storage, 
+            IImageStorage imageStorage, 
+            INameMatcher names,
+            IProductMatcher productMatcher)
         {
             _ocr = ocr;
             _kie = kie;
@@ -24,6 +32,7 @@ namespace WIB.Application.Receipts
             _storage = storage;
             _imageStorage = imageStorage;
             _names = names;
+            _productMatcher = productMatcher;
         }
 
         public async Task Handle(ProcessReceiptCommand command, CancellationToken ct)
@@ -93,11 +102,36 @@ namespace WIB.Application.Receipts
                 var corrected = await _names.CorrectProductLabelAsync(l.LabelRaw ?? string.Empty, ct);
                 var labelRaw = (corrected ?? l.LabelRaw) ?? string.Empty;
                 var pred = await _classifier.PredictAsync(l.LabelRaw ?? string.Empty, ct);
-                var typeId = pred.TypeId; var categoryId = pred.CategoryId; var confidence = pred.Confidence;
+                var typeId = pred.TypeId; 
+                var categoryId = pred.CategoryId; 
+                var confidence = pred.Confidence;
+
+                // Try to match or create product
+                Guid? productId = null;
+                var productMatch = await _productMatcher.FindOrCreateProductAsync(
+                    labelRaw,
+                    null, // brand will be extracted from labelRaw by ProductMatcher
+                    typeId,
+                    categoryId,
+                    confidence,
+                    confidenceThreshold: 0.75f, // Slightly lower threshold for receipt processing
+                    ct);
+
+                if (productMatch != null)
+                {
+                    productId = productMatch.Product.Id;
+                    
+                    // Update predictions if product match has better type/category info
+                    if (productMatch.Product.ProductTypeId != Guid.Empty)
+                        typeId = productMatch.Product.ProductTypeId;
+                    if (productMatch.Product.CategoryId.HasValue)
+                        categoryId = productMatch.Product.CategoryId;
+                }
 
                 receipt.Lines.Add(new WIB.Domain.ReceiptLine
                 {
                     LabelRaw = labelRaw,
+                    ProductId = productId,
                     Qty = l.Qty,
                     UnitPrice = l.UnitPrice,
                     LineTotal = l.LineTotal,
