@@ -119,6 +119,7 @@ public class ProcessReceiptCommandHandler
         // TODO: classificazione prodotti e popolamento ProductId
         await _storage.SaveAsync(receipt, ct);
 
+    }
     private static bool LooksLikeTotalOrPayment(string? label)
     {
         if (string.IsNullOrWhiteSpace(label)) return false;
