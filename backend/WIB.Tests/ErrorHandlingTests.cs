@@ -317,8 +317,10 @@ public class BaseApiControllerTests
 
         // Assert
         var badRequestResult = Assert.IsType<BadRequestObjectResult>(actionResult);
-        var errorObj = Assert.IsType<object>(badRequestResult.Value);
-        // Note: In real scenario, this would be validated more thoroughly
+        Assert.NotNull(badRequestResult.Value);
+        // The value should be an anonymous type with error property
+        var errorValue = badRequestResult.Value.ToString();
+        Assert.Contains("error", errorValue);
     }
 
     [Fact]
