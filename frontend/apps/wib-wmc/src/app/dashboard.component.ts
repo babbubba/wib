@@ -13,7 +13,7 @@ interface ReceiptDto {
   store: { name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string; ocrX?: number|null; ocrY?: number|null; ocrW?: number|null; ocrH?: number|null; };
   datetime: string;
   currency: string;
-  lines: { labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; categoryId?: string|null; categoryName?: string|null; ocrX?: number|null; ocrY?: number|null; ocrW?: number|null; ocrH?: number|null; }[];
+  lines: { labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; typeId?: string|null; typeName?: string|null; ocrX?: number|null; ocrY?: number|null; ocrW?: number|null; ocrH?: number|null; }[];
   totals: { total: number; }
 }
 interface Suggestions { typeCandidates: { id: string; conf: number }[]; categoryCandidates: { id: string; conf: number }[] }
@@ -46,8 +46,8 @@ export class DashboardComponent implements OnInit {
   editStoreVatNumber = signal<string>('');
   editDatetime = signal<string>('');
   editCurrency = signal<string>('EUR');
-  editLines = signal<Array<{ labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; categoryName?: string; categoryId?: string|null }>>([]);
-  catSugs = signal<Record<number, { id: string; name: string }[]>>({});
+  editLines = signal<Array<{ labelRaw: string; qty: number; unitPrice: number; lineTotal: number; vatRate?: number | null; typeName?: string; typeId?: string|null }>>([]);
+  typeSugs = signal<Record<number, { id: string; name: string }[]>>({});
   storeSugs = signal<{ id: string; name: string; address?: string; city?: string; postalCode?: string; vatNumber?: string }[]>([]);
   storeLoading = signal<boolean>(false);
 
@@ -71,54 +71,54 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  onLineChange(index: number, field: 'labelRaw'|'qty'|'unitPrice'|'lineTotal'|'vatRate'|'categoryName', value: any) {
+  onLineChange(index: number, field: 'labelRaw'|'qty'|'unitPrice'|'lineTotal'|'vatRate'|'typeName', value: any) {
     const arr = [...this.editLines()];
     const cur = { ...(arr[index] || { labelRaw: '', qty: 1, unitPrice: 0, lineTotal: 0 }) } as any;
     if (field === 'qty' || field === 'unitPrice' || field === 'lineTotal' || field === 'vatRate') cur[field] = value === '' || value === null ? null : Number(value);
     else cur[field] = value;
     arr[index] = cur; this.editLines.set(arr);
-    if (field === 'categoryName') {
-      cur['categoryId'] = null;
+    if (field === 'typeName') {
+      cur['typeId'] = null;
       const q = (value || '').toString().trim();
       if (q.length >= 2) {
-        this.http.get<any[]>(`/api/categories/search`, { params: { query: q, take: 8 } }).subscribe({
-          next: list => { const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name })); const map = { ...this.catSugs() }; map[index] = sugg; this.catSugs.set(map); },
+        this.http.get<any[]>(`/api/producttypes/search`, { params: { query: q, take: 8 } }).subscribe({
+          next: list => { const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name })); const map = { ...this.typeSugs() }; map[index] = sugg; this.typeSugs.set(map); },
           error: () => {}
         });
-      } else { const map = { ...this.catSugs() }; delete map[index]; this.catSugs.set(map); }
+      } else { const map = { ...this.typeSugs() }; delete map[index]; this.typeSugs.set(map); }
     }
   }
 
-  onCategorySearch(index: number, term: string) {
+  onTypeSearch(index: number, term: string) {
     const q = (term || '').toString().trim();
     const arr = [...this.editLines()];
     const cur = { ...(arr[index] || { labelRaw: '', qty: 1, unitPrice: 0, lineTotal: 0 }) } as any;
-    cur['categoryName'] = q; cur['categoryId'] = null; arr[index] = cur; this.editLines.set(arr);
+    cur['typeName'] = q; cur['typeId'] = null; arr[index] = cur; this.editLines.set(arr);
     if (q.length >= 2) {
-      this.http.get<any[]>(`/api/categories/search`, { params: { query: q, take: 8 } }).subscribe({
-        next: list => { const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name })); const map = { ...this.catSugs() }; map[index] = sugg; this.catSugs.set(map); },
+      this.http.get<any[]>(`/api/producttypes/search`, { params: { query: q, take: 8 } }).subscribe({
+        next: list => { const sugg = (list || []).map((x:any)=>({ id: x.id, name: x.name })); const map = { ...this.typeSugs() }; map[index] = sugg; this.typeSugs.set(map); },
         error: () => {}
       });
-    } else { const map = { ...this.catSugs() }; delete map[index]; this.catSugs.set(map); }
+    } else { const map = { ...this.typeSugs() }; delete map[index]; this.typeSugs.set(map); }
   }
 
-  onCategoryIdChange(index: number, id: string | null) {
+  ontypeIdChange(index: number, id: string | null) {
     const arr = [...this.editLines()];
     const cur = { ...(arr[index] || { labelRaw: '', qty: 1, unitPrice: 0, lineTotal: 0 }) } as any;
-    cur['categoryId'] = id || null;
-    if (id) { const found = (this.catSugs()[index] || []).find(x => String(x.id) === String(id)); if (found) cur['categoryName'] = found.name; }
+    cur['typeId'] = id || null;
+    if (id) { const found = (this.typeSugs()[index] || []).find(x => String(x.id) === String(id)); if (found) cur['typeName'] = found.name; }
     arr[index] = cur; this.editLines.set(arr);
   }
 
   chooseCategory(i: number, cat: { id: string; name: string }) {
-    const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.categoryName = cat.name; linePatch.categoryId = cat.id; arr[i] = linePatch; this.editLines.set(arr); const sugg = { ...this.catSugs() }; delete sugg[i]; this.catSugs.set(sugg);
+    const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.typeName = cat.name; linePatch.typeId = cat.id; arr[i] = linePatch; this.editLines.set(arr); const sugg = { ...this.typeSugs() }; delete sugg[i]; this.typeSugs.set(sugg);
   }
 
-  createCategory(i: number) {
-    const name = i === -1 ? (this.newCatName() || '').toString().trim() : (this.editLines()[i]?.categoryName || '').toString().trim();
+  createType(i: number) {
+    const name = i === -1 ? (this.newCatName() || '').toString().trim() : (this.editLines()[i]?.typeName || '').toString().trim();
     if (!name) return;
     this.http.post<any>(`/categories`, { name }).subscribe({
-      next: res => { const createdName = res?.name || name; const createdId = res?.id || null; if (i === -1) { this.newCatName.set(createdName); this.newCatId.set(createdId || undefined); const map = { ...this.catSugs() }; delete (map as any)[-1]; this.catSugs.set(map); } else { const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.categoryName = createdName; linePatch.categoryId = createdId; arr[i] = linePatch; this.editLines.set(arr); const map = { ...this.catSugs() }; delete map[i]; this.catSugs.set(map); } },
+      next: res => { const createdName = res?.name || name; const createdId = res?.id || null; if (i === -1) { this.newCatName.set(createdName); this.newCatId.set(createdId || undefined); const map = { ...this.typeSugs() }; delete (map as any)[-1]; this.typeSugs.set(map); } else { const arr = [...this.editLines()]; const linePatch = { ...(arr[i] || {}) } as any; linePatch.typeName = createdName; linePatch.typeId = createdId; arr[i] = linePatch; this.editLines.set(arr); const map = { ...this.typeSugs() }; delete map[i]; this.typeSugs.set(map); } },
       error: () => {}
     });
   }
@@ -150,7 +150,7 @@ export class DashboardComponent implements OnInit {
 
   select(item: ReceiptListItem) {
     this.http.get<ReceiptDto>(`/api/receipts/${item.id}`).subscribe({
-      next: r => { this.selected.set(r); this.sugs.set({}); this.editStoreName.set(r.store.name || ''); this.editDatetime.set(r.datetime ? new Date(r.datetime).toISOString().slice(0,16) : ''); this.editCurrency.set(r.currency || 'EUR'); this.editStoreAddress.set(r.store.address || ''); this.editStoreCity.set(r.store.city || ''); this.editStorePostalCode.set(r.store.postalCode || ''); this.editStoreVatNumber.set(r.store.vatNumber || ''); this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, categoryName: l.categoryName || '', categoryId: l.categoryId || null }))); this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i)); },
+      next: r => { this.selected.set(r); this.sugs.set({}); this.editStoreName.set(r.store.name || ''); this.editDatetime.set(r.datetime ? new Date(r.datetime).toISOString().slice(0,16) : ''); this.editCurrency.set(r.currency || 'EUR'); this.editStoreAddress.set(r.store.address || ''); this.editStoreCity.set(r.store.city || ''); this.editStorePostalCode.set(r.store.postalCode || ''); this.editStoreVatNumber.set(r.store.vatNumber || ''); this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, typeName: l.typeName || '', typeId: l.typeId || null }))); this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i)); },
       error: e => this.error.set(e.message || 'Errore')
     });
     this.http.get(`/api/receipts/${item.id}/image`, { responseType: 'blob' as any }).subscribe({ next: (b: any) => { if (this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); this.imageDims.set(null); this.highlight.set(null); }, error: e => this.error.set(e.message || 'Errore immagine') });
@@ -158,7 +158,7 @@ export class DashboardComponent implements OnInit {
 
   private loadReceipt(id: string) {
     this.http.get<ReceiptDto>(`/api/receipts/${id}`).subscribe({
-      next: r => { this.selected.set(r); this.sugs.set({}); this.editStoreName.set(r.store.name || ''); this.editDatetime.set(r.datetime ? new Date(r.datetime).toISOString().slice(0,16) : ''); this.editCurrency.set(r.currency || 'EUR'); this.editStoreAddress.set(r.store.address || ''); this.editStoreCity.set(r.store.city || ''); this.editStorePostalCode.set(r.store.postalCode || ''); this.editStoreVatNumber.set(r.store.vatNumber || ''); this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, categoryName: l.categoryName || '', categoryId: l.categoryId || null }))); this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i)); },
+      next: r => { this.selected.set(r); this.sugs.set({}); this.editStoreName.set(r.store.name || ''); this.editDatetime.set(r.datetime ? new Date(r.datetime).toISOString().slice(0,16) : ''); this.editCurrency.set(r.currency || 'EUR'); this.editStoreAddress.set(r.store.address || ''); this.editStoreCity.set(r.store.city || ''); this.editStorePostalCode.set(r.store.postalCode || ''); this.editStoreVatNumber.set(r.store.vatNumber || ''); this.editLines.set((r.lines || []).map(l => ({ labelRaw: l.labelRaw, qty: l.qty as any, unitPrice: l.unitPrice as any, lineTotal: l.lineTotal as any, vatRate: l.vatRate as any, typeName: l.typeName || '', typeId: l.typeId || null }))); this.currentOrder.set(Array.from({length: r.lines.length}, (_,i)=>i)); },
       error: e => this.error.set(e.message || 'Errore')
     });
     this.http.get(`/api/receipts/${id}/image`, { responseType: 'blob' as any }).subscribe({ next: (b: any) => { if (this.imageUrl()) URL.revokeObjectURL(this.imageUrl()); this.imageUrl.set(URL.createObjectURL(b)); this.imageDims.set(null); this.highlight.set(null); }, error: e => this.error.set(e.message || 'Errore immagine') });
@@ -168,8 +168,8 @@ export class DashboardComponent implements OnInit {
     this.http.get<Suggestions>(`/api/ml/suggestions`, { params: { labelRaw } }).subscribe({ next: s => this.sugs.set({ ...this.sugs(), [idx]: s }), error: e => this.error.set(e.message || 'Errore') });
   }
 
-  feedback(labelRaw: string, finalTypeId: string | null, finalCategoryId: string | null) {
-    const payload: any = { labelRaw }; if (finalTypeId) payload.finalTypeId = finalTypeId; if (finalCategoryId) payload.finalCategoryId = finalCategoryId;
+  feedback(labelRaw: string, finalTypeId: string | null, finaltypeId: string | null) {
+    const payload: any = { labelRaw }; if (finalTypeId) payload.finalTypeId = finalTypeId; if (finaltypeId) payload.finaltypeId = finaltypeId;
     this.http.post(`/api/ml/feedback`, payload).subscribe({ next: () => {}, error: e => this.error.set(e.message || 'Errore') });
   }
 
@@ -187,14 +187,14 @@ export class DashboardComponent implements OnInit {
     const label = (this.newLabel() || '').trim(); if (!label) { this.error.set('Label mancante'); return; }
     let qty = Number(this.newQty()); let unitPrice = Number(this.newUnitPrice()); let lineTotal = Number(this.newLineTotal());
     if (Number.isNaN(qty) || qty <= 0) qty = 1; if (Number.isNaN(unitPrice)) unitPrice = 0; if (Number.isNaN(lineTotal) || lineTotal <= 0) lineTotal = unitPrice * qty;
-    const body: any = { addLines: [{ labelRaw: label, qty, unitPrice, lineTotal, ...(this.newVat() == null ? {} : { vatRate: this.newVat() }), ...(this.newCatId() ? { finalCategoryId: this.newCatId() } : {}), ...(((this.newCatName()||'').trim()) ? { finalCategoryName: (this.newCatName()||'').trim() } : {}) }] };
+    const body: any = { addLines: [{ labelRaw: label, qty, unitPrice, lineTotal, ...(this.newVat() == null ? {} : { vatRate: this.newVat() }), ...(this.newCatId() ? { finaltypeId: this.newCatId() } : {}), ...(((this.newCatName()||'').trim()) ? { finaltypeName: (this.newCatName()||'').trim() } : {}) }] };
     this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({ next: () => { this.newLabel.set(''); this.newQty.set(1); this.newUnitPrice.set(0); this.newLineTotal.set(0); this.newVat.set(null); this.newCatName.set(''); this.newCatId.set(undefined); this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any); }, error: e => this.error.set(this.apiErr(e, 'Aggiunta riga fallita')) });
   }
 
   saveEdits() {
     const rec = this.selected(); if (!rec) return;
     const linesPayload: any[] = [];
-    (this.editLines() || []).forEach((l, idx) => { const orig = rec.lines[idx]; const patch: any = { index: idx }; if ((l as any).__remove) { patch.remove = true; linesPayload.push(patch); return; } if (l.labelRaw !== orig.labelRaw) patch.labelRaw = l.labelRaw; if (Number(l.qty) !== Number(orig.qty)) patch.qty = Number(l.qty); if (Number(l.unitPrice) !== Number(orig.unitPrice)) patch.unitPrice = Number(l.unitPrice); if (Number(l.lineTotal) !== Number(orig.lineTotal)) patch.lineTotal = Number(l.lineTotal); if ((l.vatRate ?? null) !== (orig.vatRate ?? null)) patch.vatRate = l.vatRate; if ((l.categoryId || null) && String(l.categoryId) !== String(orig.categoryId||'')) patch.finalCategoryId = l.categoryId; else if ((l.categoryName || '').trim()) patch.finalCategoryName = (l.categoryName || '').trim(); if (Object.keys(patch).length > 1) linesPayload.push(patch); });
+    (this.editLines() || []).forEach((l, idx) => { const orig = rec.lines[idx]; const patch: any = { index: idx }; if ((l as any).__remove) { patch.remove = true; linesPayload.push(patch); return; } if (l.labelRaw !== orig.labelRaw) patch.labelRaw = l.labelRaw; if (Number(l.qty) !== Number(orig.qty)) patch.qty = Number(l.qty); if (Number(l.unitPrice) !== Number(orig.unitPrice)) patch.unitPrice = Number(l.unitPrice); if (Number(l.lineTotal) !== Number(orig.lineTotal)) patch.lineTotal = Number(l.lineTotal); if ((l.vatRate ?? null) !== (orig.vatRate ?? null)) patch.vatRate = l.vatRate; if ((l.typeId || null) && String(l.typeId) !== String(orig.typeId||'')) patch.finaltypeId = l.typeId; else if ((l.typeName || '').trim()) patch.finaltypeName = (l.typeName || '').trim(); if (Object.keys(patch).length > 1) linesPayload.push(patch); });
     const removedIdx = linesPayload.filter(p => p.remove === true).map(p => p.index);
     let orderForApi = (this.currentOrder() || []).filter(i => removedIdx.indexOf(i) === -1); orderForApi = orderForApi.map(n => Number(n)).filter(n => Number.isInteger(n));
     const body: any = { storeName: this.editStoreName(), storeAddress: this.editStoreAddress(), storeCity: this.editStoreCity(), storePostalCode: this.editStorePostalCode(), storeVatNumber: this.editStoreVatNumber(), currency: this.editCurrency(), lines: linesPayload, order: orderForApi };
@@ -220,3 +220,4 @@ export class DashboardComponent implements OnInit {
 
   private apiErr = (e: any, fallback: string): string => { try { const status = e && (e as any).status; const bodyMsg = typeof (e && (e as any).error) === 'string' ? (e as any).error : (((e && (e as any).error && (e as any).error.message) || '')); const msg = bodyMsg || (e && (e as any).message) || ''; if (status === 409) return 'Conflitto: lo scontrino e stato modificato da un altro utente. Ricarica e riprova.'; if (status === 400) return 'Richiesta non valida'; return msg || fallback; } catch { return fallback; } };
 }
+
