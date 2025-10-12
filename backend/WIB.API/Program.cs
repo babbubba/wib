@@ -21,6 +21,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Add memory cache for EnhancedNameMatcher
+builder.Services.AddMemoryCache();
+
 var ocrEndpoint = builder.Configuration["Ocr:Endpoint"]
                    ?? Environment.GetEnvironmentVariable("Ocr__Endpoint")
                    ?? "http://localhost:8081";
@@ -34,7 +37,7 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
                   ?? "http://localhost:8082";
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
-builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.NameMatcher>();
+builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.EnhancedNameMatcher>();
 builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 

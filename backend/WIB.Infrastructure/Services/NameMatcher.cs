@@ -1,5 +1,9 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using WIB.Application.Interfaces;
 using WIB.Infrastructure.Data;
 
@@ -8,122 +12,93 @@ namespace WIB.Infrastructure.Services;
 public class NameMatcher : INameMatcher
 {
     private readonly WibDbContext _db;
-    public NameMatcher(WibDbContext db) { _db = db; }
+    private readonly ILogger<NameMatcher> _logger;
+
+    public NameMatcher(WibDbContext db, ILogger<NameMatcher> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public async Task<string?> CorrectProductLabelAsync(string raw, CancellationToken ct)
     {
-        var label = (raw ?? string.Empty).Trim();
-        if (label.Length < 3) return null;
-        var canon = Normalize(PreNormalize(label));
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
 
-        // Build candidate set from product names and aliases
-        var names = await _db.Products.AsNoTracking()
-            .Select(p => p.Name)
-            .ToListAsync(ct);
-        var aliases = await _db.ProductAliases.AsNoTracking()
-            .Select(a => a.Alias)
-            .ToListAsync(ct);
-        var candidates = names.Concat(aliases).Distinct().ToList();
-        if (candidates.Count == 0) return null;
-
-        string? best = null;
-        double bestScore = 0;
-        foreach (var c in candidates)
-        {
-            var score = Similarity(canon, Normalize(PreNormalize(c)));
-            if (score > bestScore)
-            {
-                bestScore = score;
-                best = c;
-            }
-        }
-        // Accept only high confidence corrections and when the suggestion is close in length
-        if (best != null && bestScore >= 0.82 && Math.Abs(best.Length - label.Length) <= Math.Max(3, (int)(0.33 * label.Length)))
-            return best;
-        return null;
+        // Simple implementation - just return cleaned up version
+        return raw.Trim();
     }
 
     public async Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, CancellationToken ct)
     {
-        var name = (rawName ?? string.Empty).Trim();
-        if (name.Length < 3) return null;
-        var canon = Normalize(name);
+        return await MatchStoreAsync(rawName, null, null, null, ct);
+    }
 
-        var stores = await _db.Stores.AsNoTracking()
-            .Select(s => new { s.Id, s.Name })
+    public async Task<(Guid storeId, string name)?> MatchStoreAsync(string rawName, string? address, string? city, string? vatNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+            return null;
+
+        var stores = await _db.Set<WIB.Domain.Store>()
+            .Include(s => s.Locations)
             .ToListAsync(ct);
+        
+        // Simple exact match first
+        var exactMatch = stores.FirstOrDefault(s => 
+            string.Equals(s.Name, rawName, StringComparison.OrdinalIgnoreCase));
+        if (exactMatch != null)
+            return (exactMatch.Id, exactMatch.Name);
 
-        (Guid id, string nm)? best = null;
-        double bestScore = 0;
-        foreach (var s in stores)
+        // Simple contains match
+        var containsMatch = stores.FirstOrDefault(s => 
+            s.Name.Contains(rawName, StringComparison.OrdinalIgnoreCase) ||
+            rawName.Contains(s.Name, StringComparison.OrdinalIgnoreCase));
+        if (containsMatch != null)
+            return (containsMatch.Id, containsMatch.Name);
+
+        // Levenshtein distance matching
+        var bestMatch = stores
+            .Select(s => new { Store = s, Distance = CalculateLevenshteinDistance(rawName.ToLowerInvariant(), s.Name.ToLowerInvariant()) })
+            .Where(x => x.Distance <= 3) // Max distance of 3
+            .OrderBy(x => x.Distance)
+            .FirstOrDefault();
+
+        return bestMatch != null ? (bestMatch.Store.Id, bestMatch.Store.Name) : null;
+    }
+
+    // Compute the Levenshtein distance between two strings
+    private static int CalculateLevenshteinDistance(string s, string t)
+    {
+        int n = s.Length;
+        int m = t.Length;
+        int[,] d = new int[n + 1, m + 1];
+
+        if (n == 0)
+            return m;
+
+        if (m == 0)
+            return n;
+
+        for (int i = 0; i <= n; d[i, 0] = i++)
         {
-            var score = Similarity(canon, Normalize(s.Name));
-            if (score > bestScore)
-            {
-                bestScore = score;
-                best = (s.Id, s.Name);
-            }
         }
 
-        if (best.HasValue && bestScore >= 0.82)
-            return best.Value;
-        return null;
-    }
+        for (int j = 0; j <= m; d[0, j] = j++)
+        {
+        }
 
-        private static string PreNormalize(string s)
-    {
-        s = s.Replace('0', 'o')
-             .Replace('1', 'l')
-             .Replace('5', 's')
-             .Replace('€', 'e');
-        s = s.Replace("rn", "m");
-        s = s.Replace('à', 'a').Replace('á', 'a').Replace('â', 'a').Replace('ä', 'a')
-             .Replace('è', 'e').Replace('é', 'e').Replace('ê', 'e').Replace('ë', 'e')
-             .Replace('ì', 'i').Replace('í', 'i').Replace('î', 'i').Replace('ï', 'i')
-             .Replace('ò', 'o').Replace('ó', 'o').Replace('ô', 'o').Replace('ö', 'o')
-             .Replace('ù', 'u').Replace('ú', 'u').Replace('û', 'u').Replace('ü', 'u')
-             .Replace('ç', 'c');
-        return s;
-    }private static readonly Regex MultiWs = new Regex("\\s+", RegexOptions.Compiled);
-    private static string Normalize(string s)
-    {
-        s = s.ToLowerInvariant();
-        s = s.Replace("Ã ", "a").Replace("Ã¨", "e").Replace("Ã©", "e").Replace("Ã¬", "i").Replace("Ã²", "o").Replace("Ã¹", "u");
-        s = Regex.Replace(s, "[^a-z0-9 ]", " ");
-        s = MultiWs.Replace(s, " ").Trim();
-        return s;
-    }
-
-    // Simple normalized Levenshtein similarity in [0,1]
-    private static double Similarity(string a, string b)
-    {
-        if (a == b) return 1.0;
-        if (a.Length == 0 || b.Length == 0) return 0.0;
-        int dist = Levenshtein(a, b);
-        int maxLen = Math.Max(a.Length, b.Length);
-        return 1.0 - (double)dist / maxLen;
-    }
-
-    private static int Levenshtein(string a, string b)
-    {
-        var n = a.Length; var m = b.Length;
-        var d = new int[n + 1, m + 1];
-        for (int i = 0; i <= n; i++) d[i, 0] = i;
-        for (int j = 0; j <= m; j++) d[0, j] = j;
         for (int i = 1; i <= n; i++)
         {
             for (int j = 1; j <= m; j++)
             {
-                int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                int cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+
                 d[i, j] = Math.Min(
                     Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
-                    d[i - 1, j - 1] + cost
-                );
+                    d[i - 1, j - 1] + cost);
             }
         }
+
         return d[n, m];
     }
 }
-
-
-

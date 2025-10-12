@@ -13,6 +13,8 @@ COPY backend ./backend
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked dotnet publish backend/WIB.API/WIB.API.csproj -c Release -o /app -p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app ./
 ENV ASPNETCORE_URLS=http://+:8080
