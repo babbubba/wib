@@ -13,6 +13,7 @@
     "test": "echo no tests yet"
   },
   "dependencies": {
+    "@angular/cdk": "19.2.15",
     "@angular/animations": "19.2.15",
     "@angular/common": "19.2.15",
     "@angular/compiler": "19.2.15",
