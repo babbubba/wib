@@ -181,110 +181,168 @@ import io
 import re
 from datetime import datetime, timezone
 from dateutil import parser as dateparser
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 import pytesseract
+
+
+def preprocess_image(image_bytes: bytes) -> Image.Image:
+    """Apply robust preprocessing to improve OCR accuracy.
+    Steps: EXIF transpose, grayscale, de-skew (if OpenCV available),
+    denoise, local contrast (CLAHE), adaptive threshold, unsharp.
+    Returns a PIL Image (8-bit) optimized for Tesseract.
+    """
+    with Image.open(io.BytesIO(image_bytes)) as raw:
+        # Normalize orientation from EXIF
+        img = ImageOps.exif_transpose(raw)
+        # Convert to grayscale early
+        img = ImageOps.grayscale(img)
+
+        # Try OpenCV-based enhancements when available
+        try:
+            import numpy as np  # type: ignore
+            import cv2  # type: ignore
+            arr = np.array(img)
+
+            # Denoise gently to preserve edges
+            arr = cv2.fastNlMeansDenoising(arr, h=10)
+
+            # Estimate skew angle using Hough lines on edges
+            edges = cv2.Canny(arr, 50, 150)
+            lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=120)
+            angle_deg = 0.0
+            if lines is not None and len(lines) > 0:
+                angles = []
+                for rho_theta in lines[:100]:
+                    rho, theta = rho_theta[0]
+                    # Convert angle to degrees around horizontal
+                    a = (theta * 180.0 / np.pi) - 90.0
+                    # Limit to plausible skew range
+                    if -45 <= a <= 45:
+                        angles.append(a)
+                if angles:
+                    angle_deg = float(np.median(angles))
+            if abs(angle_deg) > 0.3:
+                # Rotate around image center to deskew
+                (h, w) = arr.shape[:2]
+                M = cv2.getRotationMatrix2D((w // 2, h // 2), angle_deg, 1.0)
+                arr = cv2.warpAffine(arr, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+            # Local contrast via CLAHE
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            arr = clahe.apply(arr)
+
+            # Adaptive threshold to obtain crisp text strokes
+            thr = cv2.adaptiveThreshold(
+                arr, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
+            )
+
+            # Slight dilation then erosion to close small gaps (morphological closing)
+            kernel = np.ones((2, 2), np.uint8)
+            thr = cv2.morphologyEx(thr, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+            # Convert back to PIL
+            out = Image.fromarray(thr)
+        except Exception:
+            # Fallback: PIL-only pipeline
+            out = img
+            out = ImageOps.autocontrast(out)
+            out = out.filter(ImageFilter.MedianFilter(size=3))
+            out = out.filter(ImageFilter.SHARPEN)
+            # Slight brightness/contrast boost
+            out = ImageEnhance.Contrast(out).enhance(1.2)
+            out = ImageEnhance.Brightness(out).enhance(1.05)
+
+        # If very small, upscale to help Tesseract recognize small glyphs
+        try:
+            min_side = min(out.size)
+            if min_side < 800:
+                scale = 800.0 / float(min_side)
+                new_size = (int(out.width * scale), int(out.height * scale))
+                out = out.resize(new_size, Image.Resampling.LANCZOS)
+        except Exception:
+            pass
+
+        return out
 
 
 def ocr_text(image_bytes: bytes) -> str:
     try:
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            img = img.convert("L")
-            img = ImageOps.autocontrast(img)
-            img = img.filter(ImageFilter.SHARPEN)
-            # Try OpenCV threshold/denoise if available
-            try:
-                import numpy as np  # type: ignore
-                import cv2  # type: ignore
-                arr = np.array(img)
-                arr = cv2.fastNlMeansDenoising(arr, h=10)
-                thr = cv2.adaptiveThreshold(
-                    arr,
-                    255,
-                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                    cv2.THRESH_BINARY,
-                    31,
-                    10,
-                )
-                img = Image.fromarray(thr)
-            except Exception:
-                pass
+        img = preprocess_image(image_bytes)
+        # Prefer structured output to preserve visual row order
+        try:
+            data = pytesseract.image_to_data(
+                img, output_type=pytesseract.Output.DICT, config="--oem 3 --psm 6"
+            )
+            n = len(data.get("text", []))
+            rows: dict[tuple[int, int, int], dict] = {}
+            for i in range(n):
+                txt = (data["text"][i] or "").strip()
+                if not txt:
+                    continue
+                key = (data.get("block_num", [0])[i], data.get("par_num", [0])[i], data.get("line_num", [0])[i])
+                entry = rows.get(key)
+                if entry is None:
+                    entry = {
+                        "top": int(data.get("top", [0])[i] or 0),
+                        "left": int(data.get("left", [0])[i] or 0),
+                        "words": [],
+                    }
+                    rows[key] = entry
+                entry["top"] = min(entry["top"], int(data.get("top", [0])[i] or 0))
+                entry["words"].append((int(data.get("left", [0])[i] or 0), txt))
+            if rows:
+                ordered = sorted(rows.values(), key=lambda r: r["top"])  # top-to-bottom
+                lines_out: list[str] = []
+                for r in ordered:
+                    words = sorted(r["words"], key=lambda w: w[0])  # left-to-right
+                    line = " ".join(w for _, w in words)
+                    line = clean_line(line)
+                    if line:
+                        lines_out.append(line)
+                return "\n".join(lines_out)
+        except Exception:
+            # Fallback to plain text if structured data fails
+            pass
 
-            # Prefer structured output to preserve visual row order
-            try:
-                data = pytesseract.image_to_data(
-                    img, output_type=pytesseract.Output.DICT, config="--oem 3 --psm 6"
-                )
-                n = len(data.get("text", []))
-                rows: dict[tuple[int, int, int], dict] = {}
-                for i in range(n):
-                    txt = (data["text"][i] or "").strip()
-                    if not txt:
-                        continue
-                    key = (data.get("block_num", [0])[i], data.get("par_num", [0])[i], data.get("line_num", [0])[i])
-                    entry = rows.get(key)
-                    if entry is None:
-                        entry = {
-                            "top": int(data.get("top", [0])[i] or 0),
-                            "left": int(data.get("left", [0])[i] or 0),
-                            "words": [],
-                        }
-                        rows[key] = entry
-                    entry["top"] = min(entry["top"], int(data.get("top", [0])[i] or 0))
-                    entry["words"].append((int(data.get("left", [0])[i] or 0), txt))
-                if rows:
-                    ordered = sorted(rows.values(), key=lambda r: r["top"])  # top-to-bottom
-                    lines_out: list[str] = []
-                    for r in ordered:
-                        words = sorted(r["words"], key=lambda w: w[0])  # left-to-right
-                        line = " ".join(w for _, w in words)
-                        line = clean_line(line)
-                        if line:
-                            lines_out.append(line)
-                    return "\n".join(lines_out)
-            except Exception:
-                # Fallback to plain text if structured data fails
-                pass
-
-            text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
-            return text
+        text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
+        return text
     except Exception:
         return ""
 
 def ocr_lines(image_bytes: bytes) -> list[dict]:
     from pytesseract import Output
-    with Image.open(io.BytesIO(image_bytes)) as img:
-        gray = ImageOps.grayscale(img)
-        data = pytesseract.image_to_data(gray, output_type=Output.DICT)
-        n = len(data['text'])
-        groups = {}
-        order = []
-        for i in range(n):
-            txt = (data['text'][i] or '').strip()
-            if not txt:
-                continue
-            key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
-            if key not in groups:
-                groups[key] = {
-                    'text_parts': [],
-                    'x1': 1e9, 'y1': 1e9, 'x2': -1, 'y2': -1
-                }
-                order.append(key)
-            g = groups[key]
-            g['text_parts'].append(txt)
-            x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
-            g['x1'] = min(g['x1'], x)
-            g['y1'] = min(g['y1'], y)
-            g['x2'] = max(g['x2'], x + w)
-            g['y2'] = max(g['y2'], y + h)
-        lines: list[dict] = []
-        for key in order:
-            g = groups[key]
-            text = " ".join(g['text_parts']).strip()
-            if not text:
-                continue
-            x1, y1, x2, y2 = g['x1'], g['y1'], g['x2'], g['y2']
-            lines.append({'text': text, 'bbox': {'x': int(x1), 'y': int(y1), 'w': int(x2 - x1), 'h': int(y2 - y1)}})
-        return lines
+    img = preprocess_image(image_bytes)
+    data = pytesseract.image_to_data(img, output_type=Output.DICT)
+    n = len(data['text'])
+    groups = {}
+    order = []
+    for i in range(n):
+        txt = (data['text'][i] or '').strip()
+        if not txt:
+            continue
+        key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+        if key not in groups:
+            groups[key] = {
+                'text_parts': [],
+                'x1': 1e9, 'y1': 1e9, 'x2': -1, 'y2': -1
+            }
+            order.append(key)
+        g = groups[key]
+        g['text_parts'].append(txt)
+        x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+        g['x1'] = min(g['x1'], x)
+        g['y1'] = min(g['y1'], y)
+        g['x2'] = max(g['x2'], x + w)
+        g['y2'] = max(g['y2'], y + h)
+    lines: list[dict] = []
+    for key in order:
+        g = groups[key]
+        text = " ".join(g['text_parts']).strip()
+        if not text:
+            continue
+        x1, y1, x2, y2 = g['x1'], g['y1'], g['x2'], g['y2']
+        lines.append({'text': text, 'bbox': {'x': int(x1), 'y': int(y1), 'w': int(x2 - x1), 'h': int(y2 - y1)}})
+    return lines
 
 
 def parse_text(text: str) -> dict:

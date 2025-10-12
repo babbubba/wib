@@ -311,6 +311,9 @@ export class DashboardComponent implements OnInit {
       else if ((l.categoryName || '').trim()) patch.finalCategoryName = (l.categoryName || '').trim();
       if (Object.keys(patch).length > 1) linesPayload.push(patch);
     });
+    // Build order; if there are removals, filter those indexes out to match server-side count
+    const removedIdx = linesPayload.filter(p => p.remove === true).map(p => p.index);
+    const orderForApi = (this.currentOrder() || []).filter(i => removedIdx.indexOf(i) === -1);
     const body: any = {
       storeName: this.editStoreName(),
       storeAddress: this.editStoreAddress(),
@@ -319,11 +322,11 @@ export class DashboardComponent implements OnInit {
       storeVatNumber: this.editStoreVatNumber(),
       currency: this.editCurrency(),
       lines: linesPayload,
-      order: this.currentOrder(),
+      order: orderForApi,
     };
     const ts = this.editDatetime();
     if (ts) body.datetime = new Date(ts).toISOString();
-    this.http.post(`/receipts/${rec.id}/edit`, body).subscribe({
+    this.http.post(`/api/receipts/${rec.id}/edit`, body).subscribe({
       next: () => { this.error.set(""); this.select({ id: rec.id, datetime: rec.datetime, storeName: rec.store.name, total: rec.totals.total } as any); },
       error: (e) => this.error.set(e.message || 'Salvataggio fallito')
     })

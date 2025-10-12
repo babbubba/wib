@@ -38,7 +38,8 @@ export class AppComponent {
     if (!this.file()) return;
     this.uploading.set(true);
     this.progress.set(0);
-    this.compressImage(this.file()!, 2048, 0.85).then((blob) => {
+    // Riduci la compressione per migliorare la qualità (lato lungo 2560px, qualità 0.95)
+    this.compressImage(this.file()!, 2560, 0.95).then((blob) => {
       const form = new FormData();
       const fname = this.fileName() || 'receipt.jpg';
       form.append('file', new File([blob], fname, { type: 'image/jpeg' }));
