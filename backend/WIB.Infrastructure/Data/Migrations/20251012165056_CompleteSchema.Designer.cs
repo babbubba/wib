@@ -9,11 +9,11 @@ using WIB.Infrastructure.Data;
 
 #nullable disable
 
-namespace WIB.Infrastructure.Data.Migrations
+namespace WIB.Infrastructure.Migrations
 {
     [DbContext(typeof(WibDbContext))]
-    [Migration("20251002204416_AddPredictionsToReceiptLine")]
-    partial class AddPredictionsToReceiptLine
+    [Migration("20251012165056_CompleteSchema")]
+    partial class CompleteSchema
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -141,6 +141,10 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("PricePerKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -245,10 +249,25 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<string>("ImageObjectKey")
                         .HasColumnType("text");
 
+                    b.Property<int?>("OcrStoreH")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreW")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreX")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreY")
+                        .HasColumnType("integer");
+
                     b.Property<string>("RawText")
                         .HasColumnType("text");
 
                     b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("StoreLocationId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal?>("TaxTotal")
@@ -262,6 +281,8 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("StoreId");
+
+                    b.HasIndex("StoreLocationId");
 
                     b.ToTable("Receipts");
                 });
@@ -280,6 +301,18 @@ namespace WIB.Infrastructure.Data.Migrations
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
 
+                    b.Property<int?>("OcrH")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrW")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrX")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrY")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("PredictedCategoryId")
                         .HasColumnType("uuid");
 
@@ -289,6 +322,10 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<decimal?>("PredictionConfidence")
                         .HasPrecision(3, 2)
                         .HasColumnType("numeric(3,2)");
+
+                    b.Property<decimal?>("PricePerKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
 
                     b.Property<Guid?>("ProductId")
                         .HasColumnType("uuid");
@@ -300,6 +337,11 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<Guid>("ReceiptId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("SortIndex")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
@@ -307,6 +349,10 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<decimal?>("VatRate")
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)");
+
+                    b.Property<decimal?>("WeightKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
 
                     b.HasKey("Id");
 
@@ -323,13 +369,7 @@ namespace WIB.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Address")
-                        .HasColumnType("text");
-
                     b.Property<string>("Chain")
-                        .HasColumnType("text");
-
-                    b.Property<string>("City")
                         .HasColumnType("text");
 
                     b.Property<string>("Name")
@@ -339,6 +379,34 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Stores");
+                });
+
+            modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text");
+
+                    b.Property<string>("City")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PostalCode")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("VatNumber")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreId");
+
+                    b.ToTable("StoreLocations");
                 });
 
             modelBuilder.Entity("WIB.Domain.Category", b =>
@@ -415,7 +483,13 @@ namespace WIB.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("WIB.Domain.StoreLocation", "StoreLocation")
+                        .WithMany()
+                        .HasForeignKey("StoreLocationId");
+
                     b.Navigation("Store");
+
+                    b.Navigation("StoreLocation");
                 });
 
             modelBuilder.Entity("WIB.Domain.ReceiptLine", b =>
@@ -435,6 +509,17 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("Receipt");
                 });
 
+            modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
+                {
+                    b.HasOne("WIB.Domain.Store", "Store")
+                        .WithMany("Locations")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("WIB.Domain.Category", b =>
                 {
                     b.Navigation("Children");
@@ -452,6 +537,8 @@ namespace WIB.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("WIB.Domain.Store", b =>
                 {
+                    b.Navigation("Locations");
+
                     b.Navigation("Receipts");
                 });
 #pragma warning restore 612, 618

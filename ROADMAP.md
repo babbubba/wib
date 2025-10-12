@@ -41,10 +41,10 @@
 ## **FASE 2: 🏗️ Architettura e Funzionalità Core (2-3 giorni)**
 
 ### 2.1 **Implementazione Product-Line Association** 🎯 CRITICO
-- [ ] Implementare collegamento `ReceiptLine` → `ProductId`
-- [ ] Creare `IProductMatcher` interface
-- [ ] Implementare logica di matching/creazione prodotti
-- [ ] Test dell'associazione prodotti
+- [x] Implementare collegamento `ReceiptLine` → `ProductId`
+- [x] Creare `IProductMatcher` interface
+- [x] Implementare logica di matching/creazione prodotti
+- [x] Test dell'associazione prodotti
 
 ### 2.2 **Miglioramento Name Matching** 🎯 MEDIO
 - [ ] Migliorare algoritmi fuzzy matching per negozi
@@ -169,7 +169,18 @@
 ✅ ReceiptEditController completamente refactorato
 
 🔥 **PRONTO PER FASE 2: Architettura e Funzionalità Core**
-- 🚗 **PROSSIMO**: FASE 2.1 - Product-Line Association (TODO critico)
+- ✅ **COMPLETATA**: FASE 2.1 - Product-Line Association (TODO critico risolto!)
+  - ✅ TODO critico ProcessReceiptCommandHandler risolto
+  - ✅ IProductMatcher con 4 strategie di matching (Exact/Alias/Similar/New)
+  - ✅ ProductMatcher 378 righe con algoritmi Jaccard similarity
+  - ✅ Brand extraction e product cleaning automatici
+  - ✅ Confidence thresholds configurabili (75% per receipt processing)
+  - ✅ DI integrazione completa API + Worker
+  - ✅ Tutti test passano (8/8), smoke test confermato
+
+🏆 **MILESTONE RAGGIUNTA: RECEIPT PROCESSING ORA ASSOCIA PRODOTTI!**
+
+🚗 **IN CORSO**: FASE 2.2 - Name Matching Enhancement
 
 ---
 

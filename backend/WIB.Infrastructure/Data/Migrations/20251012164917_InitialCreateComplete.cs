@@ -3,10 +3,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace WIB.Infrastructure.Data.Migrations
+namespace WIB.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialCreateComplete : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -79,9 +79,7 @@ namespace WIB.Infrastructure.Data.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
-                    Chain = table.Column<string>(type: "text", nullable: true),
-                    Address = table.Column<string>(type: "text", nullable: true),
-                    City = table.Column<string>(type: "text", nullable: true)
+                    Chain = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -116,23 +114,21 @@ namespace WIB.Infrastructure.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Receipts",
+                name: "StoreLocations",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     StoreId = table.Column<Guid>(type: "uuid", nullable: false),
-                    Date = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    Currency = table.Column<string>(type: "text", nullable: false),
-                    TaxTotal = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: true),
-                    Total = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
-                    RawText = table.Column<string>(type: "text", nullable: true),
-                    ImageObjectKey = table.Column<string>(type: "text", nullable: true)
+                    Address = table.Column<string>(type: "text", nullable: true),
+                    City = table.Column<string>(type: "text", nullable: true),
+                    PostalCode = table.Column<string>(type: "text", nullable: true),
+                    VatNumber = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Receipts", x => x.Id);
+                    table.PrimaryKey("PK_StoreLocations", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Receipts_Stores_StoreId",
+                        name: "FK_StoreLocations_Stores_StoreId",
                         column: x => x.StoreId,
                         principalTable: "Stores",
                         principalColumn: "Id",
@@ -171,7 +167,8 @@ namespace WIB.Infrastructure.Data.Migrations
                     ProductId = table.Column<Guid>(type: "uuid", nullable: false),
                     StoreId = table.Column<Guid>(type: "uuid", nullable: false),
                     Date = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UnitPrice = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false)
+                    UnitPrice = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
+                    PricePerKg = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -210,6 +207,40 @@ namespace WIB.Infrastructure.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Receipts",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    StoreId = table.Column<Guid>(type: "uuid", nullable: false),
+                    StoreLocationId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Date = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    Currency = table.Column<string>(type: "text", nullable: false),
+                    TaxTotal = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: true),
+                    Total = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
+                    RawText = table.Column<string>(type: "text", nullable: true),
+                    ImageObjectKey = table.Column<string>(type: "text", nullable: true),
+                    OcrStoreX = table.Column<int>(type: "integer", nullable: true),
+                    OcrStoreY = table.Column<int>(type: "integer", nullable: true),
+                    OcrStoreW = table.Column<int>(type: "integer", nullable: true),
+                    OcrStoreH = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Receipts", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Receipts_StoreLocations_StoreLocationId",
+                        column: x => x.StoreLocationId,
+                        principalTable: "StoreLocations",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_Receipts_Stores_StoreId",
+                        column: x => x.StoreId,
+                        principalTable: "Stores",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ReceiptLines",
                 columns: table => new
                 {
@@ -220,7 +251,17 @@ namespace WIB.Infrastructure.Data.Migrations
                     Qty = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
                     UnitPrice = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
                     LineTotal = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: false),
-                    VatRate = table.Column<decimal>(type: "numeric(5,2)", precision: 5, scale: 2, nullable: true)
+                    VatRate = table.Column<decimal>(type: "numeric(5,2)", precision: 5, scale: 2, nullable: true),
+                    SortIndex = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    OcrX = table.Column<int>(type: "integer", nullable: true),
+                    OcrY = table.Column<int>(type: "integer", nullable: true),
+                    OcrW = table.Column<int>(type: "integer", nullable: true),
+                    OcrH = table.Column<int>(type: "integer", nullable: true),
+                    WeightKg = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: true),
+                    PricePerKg = table.Column<decimal>(type: "numeric(10,3)", precision: 10, scale: 3, nullable: true),
+                    PredictedTypeId = table.Column<Guid>(type: "uuid", nullable: true),
+                    PredictedCategoryId = table.Column<Guid>(type: "uuid", nullable: true),
+                    PredictionConfidence = table.Column<decimal>(type: "numeric(3,2)", precision: 3, scale: 2, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -287,6 +328,16 @@ namespace WIB.Infrastructure.Data.Migrations
                 name: "IX_Receipts_StoreId",
                 table: "Receipts",
                 column: "StoreId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Receipts_StoreLocationId",
+                table: "Receipts",
+                column: "StoreLocationId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_StoreLocations_StoreId",
+                table: "StoreLocations",
+                column: "StoreId");
         }
 
         /// <inheritdoc />
@@ -321,6 +372,9 @@ namespace WIB.Infrastructure.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "ProductTypes");
+
+            migrationBuilder.DropTable(
+                name: "StoreLocations");
 
             migrationBuilder.DropTable(
                 name: "Stores");
