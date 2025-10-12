@@ -1,6 +1,14 @@
 fastapi==0.111.0
 uvicorn[standard]==0.30.0
 pydantic==2.9.0
+
+# Pin NumPy to 1.26.x to avoid ABI mismatch with many prebuilt wheels (e.g., OpenCV)
+numpy==1.26.4
+
+# Use headless OpenCV for preprocessing (compatible with numpy 1.26)
+opencv-python-headless==4.8.1.78
+
+# OCR / parsing stack
 paddleocr==2.7.0.3
 pytesseract==0.3.10
 Pillow==10.4.0
