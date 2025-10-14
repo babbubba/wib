@@ -31,32 +31,44 @@ namespace WIB.API.Controllers
             if (validationResult != null)
                 return validationResult;
 
-            // Load receipt with related data
-            var receipt = await LoadReceiptAsync(id, ct);
-            if (receipt == null) 
-                return NotFound();
+            // Use a single transaction to avoid concurrency issues
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
-            var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
+            try
+            {
+                // Load receipt with related data
+                var receipt = await LoadReceiptAsync(id, ct);
+                if (receipt == null)
+                    return NotFound();
 
-            // Update receipt basic properties
-            await UpdateReceiptBasicPropertiesAsync(receipt, body, ct);
-            
-            // Update store location if needed
-            await UpdateStoreLocationAsync(receipt, body, ct);
-            
-            // Process line modifications
-            await ProcessLineModificationsAsync(receipt, body, feedbackTargets, ct);
-            
-            // Add new lines
-            await AddNewLinesAsync(receipt, body, feedbackTargets, ct);
-            
-            // Apply line reordering
-            ApplyLineReordering(receipt, body);
-            
-            // Finalize receipt
-            await FinalizeReceiptAsync(receipt, feedbackTargets, ct);
+                var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
 
-            return NoContent();
+                // Update receipt basic properties
+                await UpdateReceiptBasicPropertiesAsync(receipt, body, ct);
+
+                // Update store location if needed
+                await UpdateStoreLocationAsync(receipt, body, ct);
+
+                // Process line modifications
+                await ProcessLineModificationsAsync(receipt, body, feedbackTargets, ct);
+
+                // Add new lines
+                await AddNewLinesAsync(receipt, body, feedbackTargets, ct);
+
+                // Apply line reordering
+                ApplyLineReordering(receipt, body);
+
+                // Finalize receipt (single SaveChanges at the end)
+                await FinalizeReceiptAsync(receipt, feedbackTargets, ct);
+
+                await tx.CommitAsync(ct);
+                return NoContent();
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
         }
 
         #region Private Methods
@@ -125,7 +137,7 @@ namespace WIB.API.Controllers
                 var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
                 store = new Store { Name = normalized };
                 _db.Stores.Add(store);
-                await _db.SaveChangesAsync(ct);
+                // Defer SaveChanges to the end (single transaction)
             }
             
             receipt.StoreId = store.Id;
@@ -144,7 +156,7 @@ namespace WIB.API.Controllers
             {
                 existingLocation = CreateNewStoreLocation(receipt.StoreId, locationData);
                 _db.StoreLocations.Add(existingLocation);
-                await _db.SaveChangesAsync(ct);
+                // Defer SaveChanges to the end (single transaction)
             }
             else if (!string.IsNullOrWhiteSpace(locationData.VatNumber))
             {
@@ -464,7 +476,7 @@ namespace WIB.API.Controllers
             var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
             var newType = new ProductType { Name = normalized };
             _db.ProductTypes.Add(newType);
-            await _db.SaveChangesAsync(ct);
+            // Defer SaveChanges to the end (single transaction)
             
             return newType.Id;
         }
@@ -480,7 +492,7 @@ namespace WIB.API.Controllers
             var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
             var newCategory = new Category { Name = normalized };
             _db.Categories.Add(newCategory);
-            await _db.SaveChangesAsync(ct);
+            // Defer SaveChanges to the end (single transaction)
             
             return newCategory.Id;
         }
