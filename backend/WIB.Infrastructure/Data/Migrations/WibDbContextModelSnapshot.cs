@@ -17,7 +17,7 @@ namespace WIB.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("ProductVersion", "8.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -275,11 +275,16 @@ namespace WIB.Infrastructure.Data.Migrations
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("StoreId");
 
                     b.HasIndex("StoreLocationId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Receipts");
                 });
@@ -360,6 +365,44 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.ToTable("ReceiptLines");
                 });
 
+            modelBuilder.Entity("WIB.Domain.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceInfo")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("RevokedReason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens");
+                });
+
             modelBuilder.Entity("WIB.Domain.Store", b =>
                 {
                     b.Property<Guid>("Id")
@@ -404,6 +447,57 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.HasIndex("StoreId");
 
                     b.ToTable("StoreLocations");
+                });
+
+            modelBuilder.Entity("WIB.Domain.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EmailVerificationToken")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordResetToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("PasswordResetTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("WIB.Domain.Category", b =>
@@ -484,9 +578,17 @@ namespace WIB.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("StoreLocationId");
 
+                    b.HasOne("WIB.Domain.User", "User")
+                        .WithMany("Receipts")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Store");
 
                     b.Navigation("StoreLocation");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("WIB.Domain.ReceiptLine", b =>
@@ -504,6 +606,17 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("Receipt");
+                });
+
+            modelBuilder.Entity("WIB.Domain.RefreshToken", b =>
+                {
+                    b.HasOne("WIB.Domain.User", "User")
+                        .WithMany("RefreshTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
@@ -537,6 +650,13 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("Locations");
 
                     b.Navigation("Receipts");
+                });
+
+            modelBuilder.Entity("WIB.Domain.User", b =>
+                {
+                    b.Navigation("Receipts");
+
+                    b.Navigation("RefreshTokens");
                 });
 #pragma warning restore 612, 618
         }

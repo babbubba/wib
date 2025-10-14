@@ -87,6 +87,28 @@ namespace WIB.Infrastructure.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Email = table.Column<string>(type: "text", nullable: false),
+                    PasswordHash = table.Column<string>(type: "text", nullable: false),
+                    FirstName = table.Column<string>(type: "text", nullable: false),
+                    LastName = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    LastLoginAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    EmailVerified = table.Column<bool>(type: "boolean", nullable: false),
+                    EmailVerificationToken = table.Column<string>(type: "text", nullable: true),
+                    PasswordResetToken = table.Column<string>(type: "text", nullable: true),
+                    PasswordResetTokenExpiry = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Products",
                 columns: table => new
                 {
@@ -131,6 +153,31 @@ namespace WIB.Infrastructure.Data.Migrations
                         name: "FK_StoreLocations_Stores_StoreId",
                         column: x => x.StoreId,
                         principalTable: "Stores",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RefreshTokens",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Token = table.Column<string>(type: "text", nullable: false),
+                    ExpiresAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    IsRevoked = table.Column<bool>(type: "boolean", nullable: false),
+                    RevokedReason = table.Column<string>(type: "text", nullable: true),
+                    DeviceInfo = table.Column<string>(type: "text", nullable: true),
+                    IpAddress = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -211,6 +258,7 @@ namespace WIB.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
                     StoreId = table.Column<Guid>(type: "uuid", nullable: false),
                     StoreLocationId = table.Column<Guid>(type: "uuid", nullable: true),
                     Date = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
@@ -236,6 +284,12 @@ namespace WIB.Infrastructure.Data.Migrations
                         name: "FK_Receipts_Stores_StoreId",
                         column: x => x.StoreId,
                         principalTable: "Stores",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Receipts_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -335,9 +389,25 @@ namespace WIB.Infrastructure.Data.Migrations
                 column: "StoreLocationId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Receipts_UserId",
+                table: "Receipts",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_UserId",
+                table: "RefreshTokens",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_StoreLocations_StoreId",
                 table: "StoreLocations",
                 column: "StoreId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_Email",
+                table: "Users",
+                column: "Email",
+                unique: true);
         }
 
         /// <inheritdoc />
@@ -362,6 +432,9 @@ namespace WIB.Infrastructure.Data.Migrations
                 name: "ReceiptLines");
 
             migrationBuilder.DropTable(
+                name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
                 name: "Products");
 
             migrationBuilder.DropTable(
@@ -375,6 +448,9 @@ namespace WIB.Infrastructure.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "StoreLocations");
+
+            migrationBuilder.DropTable(
+                name: "Users");
 
             migrationBuilder.DropTable(
                 name: "Stores");
