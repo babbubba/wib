@@ -23,7 +23,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpPost]
-    [Authorize]
+    [Authorize(Roles = "device")]
     [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
     {
@@ -46,7 +46,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpGet]
-    [Authorize]
+    [Authorize(Roles = "wmc")]
     public async Task<ActionResult<IEnumerable<ReceiptListItemDto>>> List([FromQuery] int skip = 0, [FromQuery] int take = 20, CancellationToken ct = default)
     {
         if (take <= 0 || take > 100) take = 20;
@@ -68,7 +68,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpGet("pending")]
-    [Authorize]
+    [Authorize(Roles = "wmc")]
     public async Task<ActionResult<IEnumerable<LabelingItemDto>>> Pending([FromQuery] decimal maxConfidence = 0.6m, [FromQuery] int take = 50, CancellationToken ct = default)
     {
         if (take <= 0 || take > 200) take = 50;
@@ -93,7 +93,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize]
+    [Authorize(Roles = "wmc")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts
@@ -167,7 +167,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpGet("{id:guid}/image")]
-    [Authorize]
+    [Authorize(Roles = "wmc")]
     public async Task<IActionResult> GetImage(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -179,7 +179,7 @@ public class ReceiptController : BaseApiController
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize]
+    [Authorize(Roles = "wmc")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts

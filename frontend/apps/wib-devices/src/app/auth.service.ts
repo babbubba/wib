@@ -1,7 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Router } from '@angular/router';
-import { Observable, map, tap } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 
 interface LoginResponse { 
   accessToken: string;
@@ -30,10 +29,9 @@ interface LoginRequest {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private http = inject(HttpClient);
-  private router = inject(Router);
-  private accessTokenKey = 'wib_access_token';
-  private refreshTokenKey = 'wib_refresh_token';
-  private userKey = 'wib_user';
+  private accessTokenKey = 'wib_device_access_token';
+  private refreshTokenKey = 'wib_device_refresh_token';
+  private userKey = 'wib_device_user';
 
   getToken(): string | null { return localStorage.getItem(this.accessTokenKey); }
   setToken(token: string) { localStorage.setItem(this.accessTokenKey, token); }
@@ -120,18 +118,8 @@ export class AuthService {
     }
   }
 
-  logoutAndRedirect(returnUrl?: string) {
-    this.logout().subscribe({
-      next: () => {
-        const extras = returnUrl ? { queryParams: { returnUrl } } : undefined as any;
-        this.router.navigate(['/login'], extras);
-      },
-      error: () => {
-        // Even if logout fails on server, clear local tokens and redirect
-        this.clearToken();
-        const extras = returnUrl ? { queryParams: { returnUrl } } : undefined as any;
-        this.router.navigate(['/login'], extras);
-      }
-    });
+  isAuthenticated(): boolean {
+    const token = this.getToken();
+    return token !== null && !this.isTokenExpired(token);
   }
 }

@@ -20,7 +20,8 @@ public class DatabaseSeedService
     {
         try
         {
-            await SeedDefaultUserAsync();
+            await SeedRolesAsync();
+            await SeedDefaultUsersAsync();
             await SeedDefaultStoresAsync();
         }
         catch (Exception ex)
@@ -30,36 +31,87 @@ public class DatabaseSeedService
         }
     }
 
-    private async Task SeedDefaultUserAsync()
+    private async Task SeedRolesAsync()
     {
-        // Check if admin user already exists
-        var existingAdmin = await _context.Users
-            .Where(u => u.Email == "admin@wib.local")
-            .FirstOrDefaultAsync();
-
-        if (existingAdmin != null)
+        // Check if roles exist
+        if (await _context.Roles.AnyAsync())
         {
-            _logger.LogInformation("Admin user already exists, skipping creation");
+            _logger.LogInformation("Roles already exist, skipping role seeding");
             return;
         }
 
-        // Create default admin user
+        var roles = new[]
+        {
+            new Role { Name = "wmc", Description = "Web Management Console access" },
+            new Role { Name = "device", Description = "Device upload access" }
+        };
+
+        _context.Roles.AddRange(roles);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Created default roles: wmc, device");
+    }
+
+    private async Task SeedDefaultUsersAsync()
+    {
+        // Check if users already exist
+        if (await _context.Users.AnyAsync())
+        {
+            _logger.LogInformation("Users already exist, skipping user seeding");
+            return;
+        }
+
+        // Get roles
+        var roleWmc = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "wmc");
+        var roleDevice = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "device");
+
+        if (roleWmc == null || roleDevice == null)
+        {
+            _logger.LogWarning("Roles not found, cannot create users");
+            return;
+        }
+
+        // Create admin user with both roles
         var adminUser = new User
         {
-            Id = Guid.NewGuid(),
+            Username = "admin",
             Email = "admin@wib.local",
             FirstName = "Admin",
-            LastName = "Admin",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"), // Default password
+            LastName = "User",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin"),
             IsActive = true,
-            EmailVerified = true, // For demo purposes
+            EmailVerified = true,
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-        _context.Users.Add(adminUser);
+        // Create device user with only device role
+        var deviceUser = new User
+        {
+            Username = "user",
+            Email = "user@wib.local",
+            FirstName = "Device",
+            LastName = "User",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("user"),
+            IsActive = true,
+            EmailVerified = true,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        _context.Users.AddRange(adminUser, deviceUser);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Created default admin user: admin@wib.local / admin123");
+        // Assign roles
+        var userRoles = new[]
+        {
+            new UserRole { UserId = adminUser.Id, RoleId = roleWmc.Id },
+            new UserRole { UserId = adminUser.Id, RoleId = roleDevice.Id },
+            new UserRole { UserId = deviceUser.Id, RoleId = roleDevice.Id }
+        };
+
+        _context.UserRoles.AddRange(userRoles);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Created default users: admin/admin (wmc,device), user/user (device)");
     }
 
     private async Task SeedDefaultStoresAsync()
@@ -83,14 +135,14 @@ public class DatabaseSeedService
             new Store { Id = Guid.NewGuid(), Name = "Iper" },
             new Store { Id = Guid.NewGuid(), Name = "Dimar" },
             new Store { Id = Guid.NewGuid(), Name = "Selex" },
-            new Store { Id = Guid.NewGuid(), Name = "Mercatò" },
+            new Store { Id = Guid.NewGuid(), Name = "MercatÃ²" },
             new Store { Id = Guid.NewGuid(), Name = "Eurospin" },
             new Store { Id = Guid.NewGuid(), Name = "Famila / Maxi Di" },
             new Store { Id = Guid.NewGuid(), Name = "Lidl" },
             new Store { Id = Guid.NewGuid(), Name = "Galassia" },
             new Store { Id = Guid.NewGuid(), Name = "Gulliver" },
             new Store { Id = Guid.NewGuid(), Name = "Ekom" },
-            new Store { Id = Guid.NewGuid(), Name = "DPiù" },
+            new Store { Id = Guid.NewGuid(), Name = "DPiÃ¹" },
             new Store { Id = Guid.NewGuid(), Name = "Pam" },
             new Store { Id = Guid.NewGuid(), Name = "Pam Local" },
             new Store { Id = Guid.NewGuid(), Name = "iN's Mercato" },

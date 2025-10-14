@@ -1,11 +1,13 @@
 import { Component, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpEventType } from '@angular/common/http';
+import { AuthService } from './auth.service';
+import { LoginComponent } from './login.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LoginComponent],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
 })
@@ -20,8 +22,11 @@ export class AppComponent {
   preview = signal<string>('');
   successId = signal<string>('');
   multiMode = signal<boolean>(true);
+  isAuthenticated = signal<boolean>(false);
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private auth: AuthService) {
+    this.isAuthenticated.set(this.auth.isAuthenticated());
+  }
 
   onFile(ev: Event) {
     const input = ev.target as HTMLInputElement;

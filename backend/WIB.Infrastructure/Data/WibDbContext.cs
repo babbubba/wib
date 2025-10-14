@@ -21,6 +21,8 @@ public class WibDbContext : DbContext
     public DbSet<LabelingEvent> LabelingEvents => Set<LabelingEvent>();
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,9 +92,29 @@ public class WibDbContext : DbContext
             .WithMany(u => u.RefreshTokens)
             .HasForeignKey(rt => rt.UserId);
 
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.User)
+            .WithMany(u => u.UserRoles)
+            .HasForeignKey(ur => ur.UserId);
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.Role)
+            .WithMany(r => r.UserRoles)
+            .HasForeignKey(ur => ur.RoleId);
+
+        // User username unique index
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Username)
+            .IsUnique();
+
         // User email unique index
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
+            .IsUnique();
+
+        // Role name unique index
+        modelBuilder.Entity<Role>()
+            .HasIndex(r => r.Name)
             .IsUnique();
 
         // Precision for monetary/quantities

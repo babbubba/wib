@@ -32,6 +32,7 @@ public class TokenService : ITokenService
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.GivenName, user.FirstName),
             new Claim(ClaimTypes.Surname, user.LastName),
@@ -40,9 +41,17 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
 
-        // Temporary role assignment for access control: default UI role is "wmc".
-        // When user roles are implemented in the domain, map them here accordingly.
-        claims.Add(new Claim(ClaimTypes.Role, "wmc"));
+        // Add user roles from database
+        var userRoles = _context.UserRoles
+            .Include(ur => ur.Role)
+            .Where(ur => ur.UserId == user.Id)
+            .Select(ur => ur.Role!.Name)
+            .ToList();
+
+        foreach (var role in userRoles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {

@@ -151,6 +151,7 @@ public class LabelingEvent
 public class User
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
@@ -164,6 +165,7 @@ public class User
     public DateTimeOffset? PasswordResetTokenExpiry { get; set; }
     public List<Receipt> Receipts { get; set; } = new();
     public List<RefreshToken> RefreshTokens { get; set; } = new();
+    public List<UserRole> UserRoles { get; set; } = new();
 }
 
 public class RefreshToken
@@ -178,4 +180,22 @@ public class RefreshToken
     public string? RevokedReason { get; set; }
     public string? DeviceInfo { get; set; }
     public string? IpAddress { get; set; }
+}
+
+public class Role
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public List<UserRole> UserRoles { get; set; } = new();
+}
+
+public class UserRole
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public Guid RoleId { get; set; }
+    public Role? Role { get; set; }
+    public DateTimeOffset AssignedAt { get; set; } = DateTimeOffset.UtcNow;
 }

@@ -1,12 +1,10 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { catchError, switchMap, throwError, of } from 'rxjs';
+import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
-  const router = inject(Router);
   const token = auth.getToken();
   
   // Add authorization header to all requests if token exists
@@ -32,16 +30,14 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
               return next(newReq);
             }),
             catchError((refreshErr) => {
-              // Refresh failed, redirect to login
-              const returnUrl = router.routerState.snapshot.url || '/';
-              auth.logoutAndRedirect(returnUrl);
+              // Refresh failed, clear tokens and propagate error
+              auth.clearToken();
               return throwError(() => refreshErr);
             })
           );
         } else {
-          // No refresh token, redirect to login
-          const returnUrl = router.routerState.snapshot.url || '/';
-          auth.logoutAndRedirect(returnUrl);
+          // No refresh token, clear tokens
+          auth.clearToken();
         }
       }
       

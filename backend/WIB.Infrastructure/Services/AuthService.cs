@@ -69,17 +69,19 @@ public class AuthService : IAuthService
     public async Task<Result<AuthResult>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
         var user = await _context.Users
-            .Where(u => u.Email.ToLower() == request.Email.ToLower() && u.IsActive)
+            .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+            .Where(u => u.Username.ToLower() == request.Username.ToLower() && u.IsActive)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (user == null)
         {
-            return Result<AuthResult>.Failure("Invalid email or password");
+            return Result<AuthResult>.Failure("Invalid username or password");
         }
 
         if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
-            return Result<AuthResult>.Failure("Invalid email or password");
+            return Result<AuthResult>.Failure("Invalid username or password");
         }
 
         // Update last login
@@ -169,9 +171,11 @@ public class AuthService : IAuthService
         return new UserProfile
         {
             Id = user.Id,
+            Username = user.Username,
             Email = user.Email,
             FirstName = user.FirstName,
             LastName = user.LastName,
+            Roles = user.UserRoles?.Select(ur => ur.Role?.Name ?? string.Empty).Where(n => !string.IsNullOrEmpty(n)).ToList() ?? new List<string>(),
             CreatedAt = user.CreatedAt,
             LastLoginAt = user.LastLoginAt,
             EmailVerified = user.EmailVerified

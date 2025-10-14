@@ -23,7 +23,7 @@ public class RegisterRequest
 
 public class LoginRequest
 {
-    public string Email { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string? DeviceInfo { get; set; }
     public string? IpAddress { get; set; }
@@ -45,10 +45,12 @@ public class AuthResult
 public class UserProfile
 {
     public Guid Id { get; set; }
+    public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string FullName => $"{FirstName} {LastName}".Trim();
+    public List<string> Roles { get; set; } = new();
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
     public bool EmailVerified { get; set; }

@@ -14,7 +14,9 @@
             "index": "apps/wib-devices/src/index.html",
             "main": "apps/wib-devices/src/main.ts",
             "tsConfig": "apps/wib-devices/tsconfig.app.json",
-            "assets": [],
+"assets": [
+              "apps/wib-devices/src/assets"
+            ],
             "styles": [
               "bootstrap/dist/css/bootstrap.min.css",
               "apps/wib-devices/src/styles.css"
@@ -30,10 +32,13 @@
             "tsConfig": "apps/wib-devices/tsconfig.spec.json",
             "karmaConfig": "karma.conf.js",
             "polyfills": ["zone.js"],
-            "assets": [],
+"assets": [
+              "apps/wib-wmc/src/assets"
+            ],
             "styles": [
               "bootstrap/dist/css/bootstrap.min.css",
-              "apps/wib-devices/src/styles.css"
+              "node_modules/@ng-select/ng-select/themes/default.theme.css",
+              "apps/wib-wmc/src/styles.css"
             ],
             "scripts": []
           }
