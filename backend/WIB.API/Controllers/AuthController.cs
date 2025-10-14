@@ -6,6 +6,7 @@ using WIB.Application.Interfaces;
 namespace WIB.API.Controllers;
 
 [ApiController]
+[Route("auth")]
 [Route("api/[controller]")]
 public class AuthController : BaseApiController
 {
