@@ -29,7 +29,7 @@ public class TokenService : ITokenService
         var jwtSettings = _configuration.GetSection("Jwt");
         var key = Encoding.ASCII.GetBytes(jwtSettings["Secret"] ?? throw new InvalidOperationException("JWT Secret not configured"));
         
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
@@ -39,6 +39,10 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
+
+        // Temporary role assignment for access control: default UI role is "wmc".
+        // When user roles are implemented in the domain, map them here accordingly.
+        claims.Add(new Claim(ClaimTypes.Role, "wmc"));
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
