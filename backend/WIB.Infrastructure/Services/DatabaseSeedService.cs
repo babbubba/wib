@@ -49,7 +49,7 @@ public class DatabaseSeedService
             Id = Guid.NewGuid(),
             Email = "admin@wib.local",
             FirstName = "Admin",
-            LastName = "User",
+            LastName = "Admin",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"), // Default password
             IsActive = true,
             EmailVerified = true, // For demo purposes
@@ -71,14 +71,34 @@ public class DatabaseSeedService
             return;
         }
 
-        // Create some default stores for demo purposes
+        // Create some default stores 
         var stores = new[]
         {
-            new Store { Id = Guid.NewGuid(), Name = "Coop Centro" },
+            new Store { Id = Guid.NewGuid(), Name = "Coop" },
             new Store { Id = Guid.NewGuid(), Name = "Esselunga" },
             new Store { Id = Guid.NewGuid(), Name = "Carrefour Express" },
-            new Store { Id = Guid.NewGuid(), Name = "LIDL" },
-            new Store { Id = Guid.NewGuid(), Name = "Conad City" }
+            new Store { Id = Guid.NewGuid(), Name = "Carrefour" },
+            new Store { Id = Guid.NewGuid(), Name = "Conad" },
+            new Store { Id = Guid.NewGuid(), Name = "Bennet" },
+            new Store { Id = Guid.NewGuid(), Name = "Iper" },
+            new Store { Id = Guid.NewGuid(), Name = "Dimar" },
+            new Store { Id = Guid.NewGuid(), Name = "Selex" },
+            new Store { Id = Guid.NewGuid(), Name = "Mercatò" },
+            new Store { Id = Guid.NewGuid(), Name = "Eurospin" },
+            new Store { Id = Guid.NewGuid(), Name = "Famila / Maxi Di" },
+            new Store { Id = Guid.NewGuid(), Name = "Lidl" },
+            new Store { Id = Guid.NewGuid(), Name = "Galassia" },
+            new Store { Id = Guid.NewGuid(), Name = "Gulliver" },
+            new Store { Id = Guid.NewGuid(), Name = "Ekom" },
+            new Store { Id = Guid.NewGuid(), Name = "DPiù" },
+            new Store { Id = Guid.NewGuid(), Name = "Pam" },
+            new Store { Id = Guid.NewGuid(), Name = "Pam Local" },
+            new Store { Id = Guid.NewGuid(), Name = "iN's Mercato" },
+            new Store { Id = Guid.NewGuid(), Name = "Il Gigante" },
+            new Store { Id = Guid.NewGuid(), Name = "Basko" },
+            new Store { Id = Guid.NewGuid(), Name = "Despar" },
+            new Store { Id = Guid.NewGuid(), Name = "Unes*" },
+            new Store { Id = Guid.NewGuid(), Name = "PENNY Market" }
         };
 
         _context.Stores.AddRange(stores);
