@@ -28,7 +28,7 @@
     <button class="btn btn-outline-primary btn-sm mb-2" (click)="loadReceipts()">Aggiorna lista</button>
     <ul class="list-group">
       <li class="list-group-item d-flex justify-content-between align-items-center" *ngFor="let r of receipts()" (click)="select(r)" style="cursor:pointer">
-        <span>{{ r.datetime | date:'short' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
+        <span>{{ r.datetime | date:'dd/MM/yyyy HH:mm' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
       </li>
     </ul>
   </section>
