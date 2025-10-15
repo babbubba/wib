@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose build:*)",
+      "Bash(docker compose:*)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(Select-String -Pattern \"fail:|error:|Exception\" -Context 5)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -52,11 +52,14 @@ namespace WIB.API.Controllers
                 // Process line modifications
                 await ProcessLineModificationsAsync(receipt, body, feedbackTargets, ct);
 
+                // Track existing lines count before adding new ones (for reordering)
+                var existingLinesCountBeforeAdd = receipt.Lines.Count;
+
                 // Add new lines
                 await AddNewLinesAsync(receipt, body, feedbackTargets, ct);
 
-                // Apply line reordering
-                ApplyLineReordering(receipt, body);
+                // Apply line reordering (only to existing lines, not newly added)
+                ApplyLineReordering(receipt, body, existingLinesCountBeforeAdd);
 
                 // Finalize receipt (single SaveChanges at the end)
                 await FinalizeReceiptAsync(receipt, feedbackTargets, ct);
@@ -346,14 +349,21 @@ namespace WIB.API.Controllers
 
         private async Task AddNewLinesAsync(Receipt receipt, EditReceiptRequest body, List<(string Label, Guid TypeId, Guid CategoryId)> feedbackTargets, CancellationToken ct)
         {
-            if (body.AddLines == null || body.AddLines.Count == 0) 
+            if (body.AddLines == null || body.AddLines.Count == 0)
                 return;
 
             foreach (var newLineData in body.AddLines)
             {
                 var newLine = await CreateNewReceiptLineAsync(receipt, newLineData, ct);
+
+                // Reset the Id to let EF Core generate it
+                newLine.Id = Guid.Empty;
+
                 receipt.Lines.Add(newLine);
-                
+
+                // Explicitly mark as Added to ensure EF Core tracks it correctly
+                _db.Entry(newLine).State = Microsoft.EntityFrameworkCore.EntityState.Added;
+
                 // Add to feedback if both type and category are set
                 if (newLine.PredictedTypeId.HasValue && newLine.PredictedCategoryId.HasValue)
                 {
@@ -430,23 +440,39 @@ namespace WIB.API.Controllers
             return null;
         }
 
-        private void ApplyLineReordering(Receipt receipt, EditReceiptRequest body)
+        private void ApplyLineReordering(Receipt receipt, EditReceiptRequest body, int existingLinesCount)
         {
-            if (body.Order == null || body.Order.Count != receipt.Lines.Count) 
+            // If Order is null or empty, skip reordering
+            if (body.Order == null || body.Order.Count == 0)
                 return;
 
-            var currentLines = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).ToList();
-            var isValidOrder = body.Order.All(i => i >= 0 && i < currentLines.Count) && 
-                              body.Order.Distinct().Count() == currentLines.Count;
-                              
-            if (!isValidOrder) 
+            // If order count doesn't match existing lines count (before addLines), skip
+            if (body.Order.Count != existingLinesCount)
+                return;
+
+            // Get only existing lines (exclude newly added lines by using ChangeTracker)
+            // Lines in "Added" state should not be reordered
+            var existingLines = receipt.Lines
+                .Where(l => _db.Entry(l).State != Microsoft.EntityFrameworkCore.EntityState.Added)
+                .OrderBy(l => l.SortIndex)
+                .ThenBy(l => l.Id)
+                .ToList();
+
+            // Verify count matches
+            if (existingLines.Count != existingLinesCount)
+                return;
+
+            var isValidOrder = body.Order.All(i => i >= 0 && i < existingLines.Count) &&
+                              body.Order.Distinct().Count() == existingLines.Count;
+
+            if (!isValidOrder)
                 return;
 
             // Apply new sort indices based on the order array
             for (int newPosition = 0; newPosition < body.Order.Count; newPosition++)
             {
                 var originalIndex = body.Order[newPosition];
-                currentLines[originalIndex].SortIndex = newPosition;
+                existingLines[originalIndex].SortIndex = newPosition;
             }
         }
 

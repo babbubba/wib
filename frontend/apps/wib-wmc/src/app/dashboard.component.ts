@@ -38,6 +38,7 @@ export class DashboardComponent implements OnInit {
   imageDims = signal<{ nw: number; nh: number; cw: number; ch: number }|null>(null);
   highlight = signal<{ x: number; y: number; w: number; h: number }|null>(null);
   currentOrder = signal<number[]>([]);
+  selectedLineIndex = signal<number | null>(null);
   // edit state
   editStoreName = signal<string>('');
   editStoreAddress = signal<string>('');
@@ -219,6 +220,17 @@ export class DashboardComponent implements OnInit {
   }
 
   onImageLoad(ev: Event) { const img = ev.target as HTMLImageElement; this.imageDims.set({ nw: img.naturalWidth, nh: img.naturalHeight, cw: img.clientWidth, ch: img.clientHeight }); }
+
+  selectLine(i: number) {
+    this.selectedLineIndex.set(i);
+    this.highlightLine(i);
+  }
+
+  deselectLine() {
+    this.selectedLineIndex.set(null);
+    this.clearHighlight();
+  }
+
   highlightLine(i: number) { const r = this.selected(); if (!r) return; const l = (r.lines as any[])[i]; if (l && l.ocrW && l.ocrH) this.highlight.set({ x: l.ocrX!, y: l.ocrY!, w: l.ocrW!, h: l.ocrH! }); }
   highlightStore() { const r = this.selected(); if (!r) return; const s: any = r.store; if (s && s.ocrW && s.ocrH) this.highlight.set({ x: s.ocrX!, y: s.ocrY!, w: s.ocrW!, h: s.ocrH! }); }
   clearHighlight() { this.highlight.set(null); }
