@@ -7,6 +7,7 @@ using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
 using WIB.Infrastructure.Services;
+using WIB.Infrastructure.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
 // Add memory cache for EnhancedNameMatcher
@@ -47,6 +48,17 @@ var redisConn = builder.Configuration["Redis:Connection"]
                  // In Docker, prefer the service name by default
                  ?? "redis:6379";
 builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisConn));
+
+// Redis logger for centralized monitoring
+var logStreamKey = builder.Configuration["Logging:StreamKey"]
+                    ?? Environment.GetEnvironmentVariable("Logging__StreamKey")
+                    ?? "app_logs";
+var logLevel = Enum.TryParse<LogSeverity>(
+    builder.Configuration["Logging:MinLevel"] ?? Environment.GetEnvironmentVariable("Logging__MinLevel"),
+    ignoreCase: true,
+    out var parsedLevel) ? parsedLevel : LogSeverity.Info;
+builder.Services.AddSingleton<IRedisLogger>(sp =>
+    new RedisLogger(redisConn, "worker", logStreamKey, maxStreamLength: 10000, minLogLevel: logLevel));
 
 var host = builder.Build();
 

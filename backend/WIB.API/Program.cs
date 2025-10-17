@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
+using System.Threading.Tasks;
 using WIB.Application.Interfaces;
 using WIB.Application.Receipts;
 using WIB.Infrastructure.Clients;
@@ -10,6 +11,7 @@ using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
 using WIB.Infrastructure.Services;
+using WIB.Infrastructure.Logging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -64,6 +66,20 @@ var redisConn = builder.Configuration["Redis:Connection"]
                 ?? "redis:6379";
 builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisConn));
 
+// Redis logger for centralized monitoring
+var logStreamKey = builder.Configuration["Logging:StreamKey"]
+                    ?? Environment.GetEnvironmentVariable("Logging__StreamKey")
+                    ?? "app_logs";
+var logLevel = Enum.TryParse<LogSeverity>(
+    builder.Configuration["Logging:MinLevel"] ?? Environment.GetEnvironmentVariable("Logging__MinLevel"),
+    ignoreCase: true,
+    out var parsedLevel) ? parsedLevel : LogSeverity.Info;
+builder.Services.AddSingleton<IRedisLogger>(sp =>
+    new RedisLogger(redisConn, "api", logStreamKey, maxStreamLength: 10000, minLogLevel: logLevel));
+
+// Redis log consumer for monitoring endpoints
+builder.Services.AddSingleton(sp => new RedisLogConsumer(redisConn, logStreamKey));
+
 // Health checks
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<WibDbContext>(name: "db");
@@ -111,6 +127,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwtSection["Audience"] ?? "WIB.Client",
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(5)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    var path = context.HttpContext.Request.Path;
+                    if (path.StartsWithSegments("/monitoring/logs/stream") &&
+                        context.Request.Cookies.TryGetValue("wib_access_token", out var cookieToken) &&
+                        !string.IsNullOrWhiteSpace(cookieToken))
+                    {
+                        context.Token = cookieToken;
+                    }
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 

@@ -1,15 +1,26 @@
 ﻿import os
+import sys
 import base64
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Tuple
 
+# Add shared module to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from shared.redis_logger import RedisLogger, LogSeverity
+
 app = FastAPI()
 
 OCR_STUB_ENABLED = os.getenv("OCR_STUB", "false").lower() == "true"
 temp_stub_text = os.getenv("OCR_STUB_TEXT")
 OCR_STUB_TEXT = temp_stub_text if temp_stub_text is not None else "mock-ocr"
+
+# Initialize Redis logger
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+LOG_STREAM_KEY = os.getenv("LOG_STREAM_KEY", "app_logs")
+LOG_LEVEL = LogSeverity(os.getenv("LOG_LEVEL", "INFO").upper())
+logger = RedisLogger("ocr", REDIS_URL, LOG_STREAM_KEY, min_log_level=LOG_LEVEL)
 
 # --- KIE engine wiring (PP-Structure / Donut) ---
 
@@ -93,17 +104,31 @@ def health():
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
-    data = await file.read()
-    if OCR_STUB_ENABLED and OCR_STUB_TEXT:
-        return JSONResponse({"text": OCR_STUB_TEXT})
-    if not data:
-        return JSONResponse({"text": ""})
-    text_value = ocr_text(data)
-    if not text_value.strip():
-        if OCR_STUB_TEXT:
+    try:
+        await logger.info("OCR Request", f"Received OCR extraction request, file: {file.filename}", {"fileSize": file.size})
+
+        data = await file.read()
+        if OCR_STUB_ENABLED and OCR_STUB_TEXT:
+            await logger.debug("OCR Stub", "Using stub OCR mode")
             return JSONResponse({"text": OCR_STUB_TEXT})
-        return JSONResponse({"text": ""})
-    return JSONResponse({"text": text_value})
+        if not data:
+            await logger.warning("Empty Image", "Received empty image data")
+            return JSONResponse({"text": ""})
+
+        await logger.info("Preprocessing Image", f"Preprocessing image for OCR, size: {len(data)} bytes")
+        text_value = ocr_text(data)
+
+        if not text_value.strip():
+            await logger.warning("No Text Extracted", "OCR returned empty text")
+            if OCR_STUB_TEXT:
+                return JSONResponse({"text": OCR_STUB_TEXT})
+            return JSONResponse({"text": ""})
+
+        await logger.info("OCR Complete", f"Text extracted successfully, length: {len(text_value)} chars", {"textLength": len(text_value)})
+        return JSONResponse({"text": text_value})
+    except Exception as e:
+        await logger.error("OCR Error", f"Error during OCR extraction: {str(e)}", e)
+        raise
 
 
 class KieRequest(BaseModel):
@@ -141,28 +166,40 @@ class KieResponse(BaseModel):
 
 @app.post("/kie")
 async def kie(req: KieRequest):
-    # Se disponibile, e se viene fornita un'immagine, usa il motore KIE configurato
-    if req.image_b64 and KIE.kind != "stub" and KIE.ready:
-        try:
-            img_bytes = base64.b64decode(req.image_b64)
-            pred = KIE.infer_image(img_bytes)
-            return JSONResponse(pred)
-        except Exception:
-            # Fallback a stub se l'inferenza fallisce
-            pass
-
-    # Heuristic parsing based on OCR text
     try:
-        pred = parse_text(req.text or "")
-        return JSONResponse(pred)
-    except Exception:
-        return JSONResponse(KieResponse(
-            store=KieStore(name=""),
-            datetime="",
-            currency="EUR",
-            lines=[],
-            totals=KieTotals(subtotal=0.0, tax=0.0, total=0.0),
-        ).model_dump())
+        await logger.info("KIE Request", "Received KIE extraction request", {"textLength": len(req.text or ""), "hasImage": req.image_b64 is not None})
+
+        # Se disponibile, e se viene fornita un'immagine, usa il motore KIE configurato
+        if req.image_b64 and KIE.kind != "stub" and KIE.ready:
+            try:
+                await logger.info("KIE Model Inference", f"Using {KIE.kind} model for KIE extraction")
+                img_bytes = base64.b64decode(req.image_b64)
+                pred = KIE.infer_image(img_bytes)
+                await logger.info("KIE Complete", "KIE extraction successful using trained model", {"lineCount": len(pred.get("lines", []))})
+                return JSONResponse(pred)
+            except Exception as e:
+                await logger.warning("KIE Model Failed", f"Model inference failed, falling back to heuristic parsing: {str(e)}")
+                # Fallback a stub se l'inferenza fallisce
+                pass
+
+        # Heuristic parsing based on OCR text
+        try:
+            await logger.info("KIE Heuristic", "Using heuristic parsing for KIE extraction")
+            pred = parse_text(req.text or "")
+            await logger.info("KIE Complete", "KIE extraction successful using heuristics", {"lineCount": len(pred.get("lines", []))})
+            return JSONResponse(pred)
+        except Exception as e:
+            await logger.error("KIE Error", f"KIE extraction failed: {str(e)}", e)
+            return JSONResponse(KieResponse(
+                store=KieStore(name=""),
+                datetime="",
+                currency="EUR",
+                lines=[],
+                totals=KieTotals(subtotal=0.0, tax=0.0, total=0.0),
+            ).model_dump())
+    except Exception as e:
+        await logger.error("KIE Endpoint Error", f"Unexpected error in KIE endpoint: {str(e)}", e)
+        raise
 
 
 @app.get("/kie/status")

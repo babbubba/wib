@@ -15,15 +15,17 @@ namespace WIB.Application.Receipts
         private readonly INameMatcher _names;
         private readonly IImageStorage _imageStorage;
         private readonly IProductMatcher _productMatcher;
+        private readonly IRedisLogger? _redisLogger;
 
         public ProcessReceiptCommandHandler(
-            IOcrClient ocr, 
-            IKieClient kie, 
-            IProductClassifier classifier, 
-            IReceiptStorage storage, 
-            IImageStorage imageStorage, 
+            IOcrClient ocr,
+            IKieClient kie,
+            IProductClassifier classifier,
+            IReceiptStorage storage,
+            IImageStorage imageStorage,
             INameMatcher names,
-            IProductMatcher productMatcher)
+            IProductMatcher productMatcher,
+            IRedisLogger? redisLogger = null)
         {
             _ocr = ocr;
             _kie = kie;
@@ -32,6 +34,7 @@ namespace WIB.Application.Receipts
             _imageStorage = imageStorage;
             _names = names;
             _productMatcher = productMatcher;
+            _redisLogger = redisLogger;
         }
 
         public async Task Handle(ProcessReceiptCommand command, CancellationToken ct)
@@ -43,14 +46,48 @@ namespace WIB.Application.Receipts
             string? objectKey = command.ObjectKey;
             if (string.IsNullOrEmpty(objectKey))
             {
-                try { objectKey = await _imageStorage.SaveAsync(ms, null, ct); } catch { }
+                try
+                {
+                    if (_redisLogger != null)
+                        await _redisLogger.DebugAsync("Saving Image", "Image not yet saved to storage, saving now", ct: ct);
+                    objectKey = await _imageStorage.SaveAsync(ms, null, ct);
+                    if (_redisLogger != null)
+                        await _redisLogger.DebugAsync("Image Saved", $"Image saved with key: {objectKey}", new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>" }, ct);
+                }
+                catch (Exception ex)
+                {
+                    if (_redisLogger != null)
+                        await _redisLogger.ErrorAsync("Image Save Failed", "Failed to save image to storage", ex, ct: ct);
+                }
                 ms.Position = 0;
             }
 
-            var ocrResult = await _ocr.ExtractAsync(ms, ct);
-            ms.Position = 0;
-            var imgBytes = ms.ToArray();
-            var kie = await _kie.ExtractFieldsAsync(ocrResult, imgBytes, ct);
+            try
+            {
+                if (_redisLogger != null)
+                    await _redisLogger.InfoAsync("Calling OCR Service", $"Extracting text from receipt image", new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>" }, ct);
+
+                var ocrResult = await _ocr.ExtractAsync(ms, ct);
+                ms.Position = 0;
+
+                if (_redisLogger != null)
+                    await _redisLogger.InfoAsync("OCR Complete", $"Text extracted, length: {ocrResult?.Length ?? 0} chars", new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>", ["textLength"] = ocrResult?.Length ?? 0 }, ct);
+
+                var imgBytes = ms.ToArray();
+
+                if (_redisLogger != null)
+                    await _redisLogger.InfoAsync("Calling KIE Service", "Extracting structured fields from receipt", new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>" }, ct);
+
+                var kie = await _kie.ExtractFieldsAsync(ocrResult, imgBytes, ct);
+
+                if (_redisLogger != null)
+                    await _redisLogger.InfoAsync("KIE Complete", $"Extracted store: {kie.Store?.Name}, lines: {kie.Lines?.Count ?? 0}", new Dictionary<string, object>
+                    {
+                        ["objectKey"] = objectKey ?? "<null>",
+                        ["storeName"] = kie.Store?.Name ?? "<null>",
+                        ["lineCount"] = kie.Lines?.Count ?? 0,
+                        ["total"] = kie.Totals?.Total ?? 0
+                    }, ct);
 
             Guid? existingStoreId = null;
             if (!string.IsNullOrWhiteSpace(kie.Store.Name))
@@ -100,6 +137,7 @@ namespace WIB.Application.Receipts
             }
 
             var idx = 0;
+            var mlCallCount = 0;
             foreach (var l in kie.Lines)
             {
                 if (LooksLikeTotalOrPayment(l.LabelRaw ?? string.Empty))
@@ -107,10 +145,25 @@ namespace WIB.Application.Receipts
 
                 var corrected = await _names.CorrectProductLabelAsync(l.LabelRaw ?? string.Empty, ct);
                 var labelRaw = (corrected ?? l.LabelRaw) ?? string.Empty;
-                var pred = await _classifier.PredictAsync(l.LabelRaw ?? string.Empty, ct);
-                var typeId = pred.TypeId; 
-                var categoryId = pred.CategoryId; 
-                var confidence = pred.Confidence;
+
+                try
+                {
+                    mlCallCount++;
+                    if (_redisLogger != null && mlCallCount == 1)
+                        await _redisLogger.InfoAsync("Calling ML Service", "Starting ML classification for receipt lines", new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>", ["lineCount"] = kie.Lines.Count }, ct);
+
+                    var pred = await _classifier.PredictAsync(l.LabelRaw ?? string.Empty, ct);
+                    var typeId = pred.TypeId;
+                    var categoryId = pred.CategoryId;
+                    var confidence = pred.Confidence;
+
+                    if (_redisLogger != null)
+                        await _redisLogger.DebugAsync("ML Classification", $"Line '{labelRaw}' classified with confidence {confidence:F2}", new Dictionary<string, object>
+                        {
+                            ["objectKey"] = objectKey ?? "<null>",
+                            ["label"] = labelRaw,
+                            ["confidence"] = confidence
+                        }, ct);
 
                 // Try to match or create product
                 Guid? productId = null;
@@ -153,6 +206,13 @@ namespace WIB.Application.Receipts
                     PredictedCategoryId = categoryId,
                     PredictionConfidence = (decimal?)confidence
                 });
+                }
+                catch (Exception ex)
+                {
+                    if (_redisLogger != null)
+                        await _redisLogger.ErrorAsync("ML Classification Error", $"Failed to classify line: {labelRaw}", ex, new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>", ["label"] = labelRaw }, ct);
+                    // Continue processing other lines despite error
+                }
             }
 
             if (existingStoreId.HasValue && receipt.StoreLocation != null)
@@ -160,7 +220,30 @@ namespace WIB.Application.Receipts
                 receipt.StoreLocation.StoreId = existingStoreId.Value;
             }
 
+            if (_redisLogger != null)
+                await _redisLogger.InfoAsync("Saving Receipt", $"Persisting receipt to database: {receipt.Lines.Count} lines", new Dictionary<string, object>
+                {
+                    ["objectKey"] = objectKey ?? "<null>",
+                    ["lineCount"] = receipt.Lines.Count,
+                    ["total"] = receipt.Total,
+                    ["store"] = receipt.Store?.Name ?? "<existing>"
+                }, ct);
+
             await _storage.SaveAsync(receipt, ct);
+
+            if (_redisLogger != null)
+                await _redisLogger.InfoAsync("Receipt Saved", "Receipt successfully persisted to database", new Dictionary<string, object>
+                {
+                    ["objectKey"] = objectKey ?? "<null>",
+                    ["receiptId"] = receipt.Id.ToString()
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                if (_redisLogger != null)
+                    await _redisLogger.ErrorAsync("Processing Pipeline Error", "Error in OCR/KIE/ML pipeline", ex, new Dictionary<string, object> { ["objectKey"] = objectKey ?? "<null>" }, ct);
+                throw;
+            }
         }
 
         private static bool LooksLikeTotalOrPayment(string label)

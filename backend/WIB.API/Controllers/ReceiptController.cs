@@ -14,12 +14,14 @@ public class ReceiptController : BaseApiController
     private readonly IImageStorage _imageStorage;
     private readonly IReceiptQueue _queue;
     private readonly WibDbContext _db;
+    private readonly IRedisLogger _redisLogger;
 
-    public ReceiptController(IImageStorage imageStorage, IReceiptQueue queue, WibDbContext db)
+    public ReceiptController(IImageStorage imageStorage, IReceiptQueue queue, WibDbContext db, IRedisLogger redisLogger)
     {
         _imageStorage = imageStorage;
         _queue = queue;
         _db = db;
+        _redisLogger = redisLogger;
     }
 
     [HttpPost]
@@ -28,21 +30,58 @@ public class ReceiptController : BaseApiController
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
     {
         var userId = GetCurrentUserId();
-        
-        await using var stream = file.OpenReadStream();
-        var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
-        
-        var queueItem = new ReceiptQueueItem(objectKey, userId);
+
         try
         {
-            await _queue.EnqueueAsync(queueItem, ct);
+            await _redisLogger.InfoAsync("Receipt Upload", $"User {userId} uploading receipt, size: {file.Length} bytes", new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["fileName"] = file.FileName,
+                ["fileSize"] = file.Length,
+                ["contentType"] = file.ContentType ?? "unknown"
+            }, ct);
+
+            await using var stream = file.OpenReadStream();
+            var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
+
+            await _redisLogger.InfoAsync("Receipt Uploaded", $"Receipt saved to storage: {objectKey}", new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["objectKey"] = objectKey
+            }, ct);
+
+            var queueItem = new ReceiptQueueItem(objectKey, userId);
+            try
+            {
+                await _queue.EnqueueAsync(queueItem, ct);
+                await _redisLogger.InfoAsync("Receipt Queued", $"Receipt queued for processing: {objectKey}", new Dictionary<string, object>
+                {
+                    ["userId"] = userId.ToString(),
+                    ["objectKey"] = objectKey
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                // Non bloccare l'upload se la coda è temporaneamente indisponibile
+                await _redisLogger.WarningAsync("Queue Enqueue Failed", $"Failed to queue receipt {objectKey}, but upload succeeded", new Dictionary<string, object>
+                {
+                    ["userId"] = userId.ToString(),
+                    ["objectKey"] = objectKey,
+                    ["error"] = ex.Message
+                }, ct);
+            }
+
+            return Accepted(new { objectKey });
         }
-        catch
+        catch (Exception ex)
         {
-            // Non bloccare l'upload se la coda è temporaneamente indisponibile
+            await _redisLogger.ErrorAsync("Upload Failed", "Receipt upload failed", ex, new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["fileName"] = file.FileName
+            }, ct);
+            throw;
         }
-        
-        return Accepted(new { objectKey });
     }
 
     [HttpGet]

@@ -1,0 +1,65 @@
+.service-status-container {
+  margin-bottom: 2rem;
+}
+
+.service-card {
+  border-left: 4px solid;
+  transition: all 0.3s ease;
+}
+
+.service-card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.status-running {
+  border-left-color: #28a745;
+}
+
+.status-stopped {
+  border-left-color: #dc3545;
+}
+
+.status-unhealthy {
+  border-left-color: #ffc107;
+}
+
+.status-unknown {
+  border-left-color: #6c757d;
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.status-running .status-badge {
+  background-color: #28a745;
+}
+
+.status-stopped .status-badge {
+  background-color: #dc3545;
+}
+
+.status-unhealthy .status-badge {
+  background-color: #ffc107;
+  color: #212529;
+}
+
+.status-unknown .status-badge {
+  background-color: #6c757d;
+}
+
+.service-info {
+  margin-top: 0.75rem;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.info-item small {
+  font-weight: 500;
+}

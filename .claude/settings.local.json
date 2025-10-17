@@ -5,7 +5,18 @@
       "Bash(docker compose build:*)",
       "Bash(docker compose:*)",
       "Bash(Start-Sleep -Seconds 5)",
-      "Bash(Select-String -Pattern \"fail:|error:|Exception\" -Context 5)"
+      "Bash(Select-String -Pattern \"fail:|error:|Exception\" -Context 5)",
+      "Bash(Get-ChildItem -Path \"C:\\Users\\Babbubba\\source\\repos\\wib-github\\backend\\WIB.Infrastructure\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(mkdir:*)",
+      "Bash(npm run build:wmc:*)",
+      "Bash(npm run start:wmc:*)",
+      "Bash(Start-Sleep -Seconds 10)",
+      "Bash(Select-String -Pattern \"error|Error|ERROR\" -Context 2)",
+      "Bash(if [ ! -f services/shared/__init__.py ])",
+      "Bash(then touch services/shared/__init__.py)",
+      "Bash(else echo \"__init__.py already exists\")",
+      "Bash(fi)"
     ],
     "deny": [],
     "ask": []

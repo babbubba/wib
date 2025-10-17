@@ -8,6 +8,7 @@ import { HomeComponent } from './app/home.component';
 import { DashboardComponent } from './app/dashboard.component';
 import { QueueComponent } from './app/queue.component';
 import { LoginComponent } from './app/login.component';
+import { MonitoringComponent } from './app/monitoring/monitoring.component';
 import { authGuard } from './app/auth.guard';
 
 const routes: Routes = [
@@ -17,6 +18,7 @@ const routes: Routes = [
   // Deep link to edit a specific receipt
   { path: 'receipts/:id', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'queue', component: QueueComponent, canActivate: [authGuard] },
+  { path: 'monitoring', component: MonitoringComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: '' },
 ];
 

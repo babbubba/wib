@@ -1,0 +1,128 @@
+<div class="log-viewer-container">
+  <!-- Filters and Controls -->
+  <div class="controls-panel card mb-3">
+    <div class="card-body">
+      <div class="row g-3">
+        <!-- Level Filters -->
+        <div class="col-md-6">
+          <label class="form-label fw-bold">Livelli:</label>
+          <div class="d-flex flex-wrap gap-2">
+            <button
+              *ngFor="let level of levels"
+              class="btn btn-sm"
+              [class.btn-outline-secondary]="!selectedLevels.has(level)"
+              [class.btn-primary]="selectedLevels.has(level)"
+              (click)="toggleLevel(level)">
+              {{ level }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Source Filters -->
+        <div class="col-md-6">
+          <label class="form-label fw-bold">Sorgenti:</label>
+          <div class="d-flex flex-wrap gap-2">
+            <button
+              *ngFor="let source of sources"
+              class="btn btn-sm"
+              [class.btn-outline-secondary]="!selectedSources.has(source)"
+              [class.btn-success]="selectedSources.has(source)"
+              (click)="toggleSource(source)">
+              {{ source }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="col-12">
+          <label class="form-label fw-bold">Cerca:</label>
+          <input
+            type="text"
+            class="form-control"
+            placeholder="Cerca nel messaggio o titolo..."
+            [(ngModel)]="searchText"
+            (ngModelChange)="onSearchChange()">
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="col-12">
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm" [class.btn-warning]="isPaused" [class.btn-outline-warning]="!isPaused" (click)="togglePause()">
+              {{ isPaused ? 'Riprendi' : 'Pausa' }}
+            </button>
+            <button class="btn btn-sm" [class.btn-info]="autoScroll" [class.btn-outline-info]="!autoScroll" (click)="toggleAutoScroll()">
+              Auto-scroll: {{ autoScroll ? 'ON' : 'OFF' }}
+            </button>
+            <button class="btn btn-sm btn-outline-danger" (click)="clearLogs()">
+              Cancella
+            </button>
+            <span class="ms-auto text-muted">
+              {{ filteredLogs.length }} / {{ logs.length }} logs
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs Table -->
+  <div class="logs-container card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light sticky-top">
+          <tr>
+            <th style="width: 150px">Timestamp</th>
+            <th style="width: 100px">Livello</th>
+            <th style="width: 100px">Sorgente</th>
+            <th style="width: 200px">Titolo</th>
+            <th>Messaggio</th>
+            <th style="width: 50px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngIf="filteredLogs.length === 0">
+            <td colspan="6" class="text-center text-muted py-4">
+              {{ logs.length === 0 ? 'Nessun log disponibile' : 'Nessun log corrisponde ai filtri' }}
+            </td>
+          </tr>
+          <ng-container *ngFor="let log of filteredLogs; let i = index">
+            <tr [ngClass]="getLevelClass(log.level)" class="log-row" (click)="toggleExpandLog(i)">
+              <td class="text-nowrap">
+                <small>{{ log.timestamp | date:'HH:mm:ss.SSS' }}</small>
+              </td>
+              <td>
+                <span [ngClass]="getLevelBadgeClass(log.level)">
+                  {{ log.level }}
+                </span>
+              </td>
+              <td>
+                <span [ngClass]="getSourceBadgeClass(log.source)">
+                  {{ log.source }}
+                </span>
+              </td>
+              <td>
+                <span class="log-title">{{ log.title }}</span>
+              </td>
+              <td>
+                <span class="log-message">{{ log.message }}</span>
+              </td>
+              <td class="text-center">
+                <span *ngIf="hasMetadata(log)" class="badge bg-secondary">
+                  <i class="bi bi-chevron-{{ expandedLogIndex === i ? 'up' : 'down' }}"></i>
+                </span>
+              </td>
+            </tr>
+            <tr *ngIf="expandedLogIndex === i && hasMetadata(log)" class="log-detail-row">
+              <td colspan="6">
+                <div class="log-detail-content">
+                  <strong>Metadata:</strong>
+                  <pre class="metadata-pre">{{ formatMetadata(log.metadata!) }}</pre>
+                </div>
+              </td>
+            </tr>
+          </ng-container>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

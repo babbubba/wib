@@ -13,7 +13,22 @@
   - WMC (analytics/review): `npm run start:wmc --prefix frontend` ‚Üí http://localhost:4201
   - Proxy unico per API:
 ## Aggiornamenti Recenti
-- Build consigliato dopo l'aggiornamento
+
+### Sistema di Monitoring e Logging Centralizzato ‚≠ê NUOVO
+- **Logging strutturato su Redis Streams**: Tutti i microservizi (Worker, API, ML, OCR) pubblicano log strutturati su Redis (chiave `app_logs`) con timestamp, livello (ERROR/WARNING/INFO/DEBUG/VERBOSE), sorgente, messaggio e metadata.
+- **Dashboard real-time nella WMC**: Nuova pagina `/monitoring` con:
+  - **Log Viewer**: streaming real-time via SSE, filtri per livello/sorgente, ricerca testuale, pause/resume, dettaglio metadata/stack trace espandibile
+  - **Service Status Monitor**: card visive per ogni servizio (Worker, API, ML, OCR) con stato (running/stopped/unhealthy), uptime e polling automatico ogni 15 secondi
+  - **Badge errori nella Home**: mostra numero errori recenti (ultimi 5 minuti) con aggiornamento automatico ogni 30 secondi
+- **API Endpoints** (richiedono ruolo `wmc`):
+  - `GET /monitoring/logs/stream` - Stream SSE real-time con filtri
+  - `GET /monitoring/logs?limit=100&level=ERROR&source=worker` - Query log recenti
+  - `GET /monitoring/logs/error-count` - Conteggio errori recenti
+  - `GET /monitoring/services/status` - Stato salute servizi
+- **Configurazione**: Variabili d'ambiente `Logging__StreamKey`, `Logging__MinLevel` (.NET) e `LOG_STREAM_KEY`, `LOG_LEVEL` (Python) gi√† configurate in `docker-compose.yml`
+- **Documentazione completa**: `docs/MONITORING.md` con guida utilizzo, esempi codice e troubleshooting
+
+### Build consigliato dopo l'aggiornamento
   - Ogni modifica va testata ricostruendo l'immagine/servizio interessato:
     - API (.NET): `docker compose build api && docker compose up -d api`
     - Worker (.NET): `docker compose build worker && docker compose up -d worker`
@@ -22,14 +37,14 @@
   - Esempio completo: `docker compose build proxy web-devices web-wmc api worker && docker compose up -d`
   - In dev Angular (ng serve), non serve rebuild Docker: riavvia comunque l'API se hai toccato il backend.
 
-- Upload pi˘ robusto e veloce
+### Upload piÔøΩ robusto e veloce
   - Limiti innalzati a 20 MB su proxy e web-frontend (client_max_body_size 20m) e lato API (RequestSizeLimit e FormOptions.MultipartBodyLengthLimit).
-  - L'upload non fallisce pi˘ se la coda Redis non Ë disponibile: l'immagine viene comunque salvata (202). » possibile riaccodare da WMC (Queue) quando Redis torna disponibile.
+  - L'upload non fallisce piÔøΩ se la coda Redis non ÔøΩ disponibile: l'immagine viene comunque salvata (202). ÔøΩ possibile riaccodare da WMC (Queue) quando Redis torna disponibile.
 - Devices: caricamenti sequenziali rapidi
-  - Switch ìModalit‡ sequenzialeî: avvia l'upload subito dopo lo scatto/selezione e, a completamento, propone subito il prossimo scatto.
-  - Pulsante ìProssimo scontrinoî postñsuccesso per passare velocemente alla foto successiva.
+  - Switch ÔøΩModalitÔøΩ sequenzialeÔøΩ: avvia l'upload subito dopo lo scatto/selezione e, a completamento, propone subito il prossimo scatto.
+  - Pulsante ÔøΩProssimo scontrinoÔøΩ postÔøΩsuccesso per passare velocemente alla foto successiva.
 - WMC: coda e modifica scontrini
-  - La pagina Queue non mostra pi˘ le chiavi gi‡ processate (evita duplicati ìin codaî e ìgi‡ processatiî).
+  - La pagina Queue non mostra piÔøΩ le chiavi giÔøΩ processate (evita duplicati ÔøΩin codaÔøΩ e ÔøΩgiÔøΩ processatiÔøΩ).
   - Migliorata l'API di editing: validazione addLines, normalizzazione numeri, riordino sicuro, gestione concorrenza (409) e messaggi chiari lato UI (400/409).
 - Build consigliato dopo l'aggiornamento
   - docker compose build proxy web-devices web-wmc api && docker compose up -d proxy web-devices web-wmc api
@@ -392,6 +407,7 @@ Feature minime incluse:
 
 ## API Chiave
 
+### Receipts & Analytics
 - `POST /receipts` (upload) [pubblico]
 - `GET /receipts` [wmc]
 - `GET /receipts/{id}` [wmc]
@@ -399,8 +415,18 @@ Feature minime incluse:
 - `GET /receipts/pending?maxConfidence=` [wmc]
 - `GET /analytics/spending?from=...&to=...` [wmc]
 - `GET /analytics/price-history?productId=...&storeId=...` [wmc]
+
+### ML & Classification
 - `GET /ml/suggestions?labelRaw=...` [wmc]
 - `POST /ml/feedback` [wmc]
+
+### Monitoring & Logs ‚≠ê NUOVO
+- `GET /monitoring/logs/stream` [wmc] - Stream SSE real-time
+- `GET /monitoring/logs?limit=100&level=ERROR&source=worker` [wmc] - Query log recenti
+- `GET /monitoring/logs/error-count` [wmc] - Conteggio errori (ultimi 5 min)
+- `GET /monitoring/services/status` [wmc] - Stato salute servizi
+
+### Authentication
 - `POST /auth/token { username, password }` ‚Üí `{ accessToken, tokenType, expiresIn, role }`
 
 ## Politica di Testing

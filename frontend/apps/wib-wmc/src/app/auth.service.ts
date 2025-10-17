@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, map, tap } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 
 interface LoginResponse { 
   accessToken: string;
@@ -35,12 +35,23 @@ export class AuthService {
   private refreshTokenKey = 'wib_refresh_token';
   private userKey = 'wib_user';
 
+  constructor() {
+    const existingToken = this.getToken();
+    if (existingToken) {
+      this.setAuthCookie(existingToken);
+    }
+  }
+
   getToken(): string | null { return localStorage.getItem(this.accessTokenKey); }
-  setToken(token: string) { localStorage.setItem(this.accessTokenKey, token); }
+  setToken(token: string, expiresAt?: string) {
+    localStorage.setItem(this.accessTokenKey, token);
+    this.setAuthCookie(token, expiresAt);
+  }
   clearToken() { 
     localStorage.removeItem(this.accessTokenKey); 
     localStorage.removeItem(this.refreshTokenKey);
     localStorage.removeItem(this.userKey);
+    this.setAuthCookie(null);
   }
   
   getRefreshToken(): string | null { return localStorage.getItem(this.refreshTokenKey); }
@@ -54,16 +65,10 @@ export class AuthService {
 
   isTokenExpired(token: string | null): boolean {
     if (!token) return true;
-    try {
-      const parts = token.split('.');
-      if (parts.length < 2) return false; // not a JWT, assume no exp info
-      const payload = JSON.parse(this.base64UrlDecode(parts[1]));
-      if (!payload || typeof payload.exp !== 'number') return false;
-      const nowSec = Math.floor(Date.now() / 1000);
-      return payload.exp <= nowSec;
-    } catch {
-      return false; // be permissive if can't decode
-    }
+    const payload = this.tryDecodeJwt(token);
+    if (!payload || typeof payload.exp !== 'number') return false;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return payload.exp <= nowSec;
   }
 
   private base64UrlDecode(s: string): string {
@@ -74,12 +79,62 @@ export class AuthService {
     ).join(''));
   }
 
+  private tryDecodeJwt(token: string): any | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length < 2) return null;
+      return JSON.parse(this.base64UrlDecode(parts[1]));
+    } catch {
+      return null;
+    }
+  }
+
+  private setAuthCookie(token: string | null, expiresAt?: string) {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const attributes = this.getCookieAttributes();
+
+    if (!token) {
+      document.cookie = `${this.accessTokenKey}=; Max-Age=0${attributes}`;
+      return;
+    }
+
+    let expiry: Date | null = null;
+
+    if (expiresAt) {
+      const parsed = new Date(expiresAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiry = parsed;
+      }
+    }
+
+    if (!expiry) {
+      const payload = this.tryDecodeJwt(token);
+      if (payload && typeof payload.exp === 'number') {
+        expiry = new Date(payload.exp * 1000);
+      }
+    }
+
+    if (!expiry) {
+      expiry = new Date(Date.now() + 60 * 60 * 1000);
+    }
+
+    document.cookie = `${this.accessTokenKey}=${token}; expires=${expiry.toUTCString()}${attributes}`;
+  }
+
+  private getCookieAttributes(): string {
+    const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+    return `; path=/; SameSite=Lax${secure}`;
+  }
+
   login(username: string, password: string): Observable<LoginResponse> {
     const request: LoginRequest = { username, password };
     return this.http.post<LoginResponse>('/api/auth/login', request).pipe(
       tap(response => {
         if (response?.accessToken) {
-          this.setToken(response.accessToken);
+          this.setToken(response.accessToken, response.expiresAt);
           this.setRefreshToken(response.refreshToken);
           this.setUser(response.user);
         }
@@ -97,7 +152,7 @@ export class AuthService {
     return this.http.post<LoginResponse>('/api/auth/refresh', request).pipe(
       tap(response => {
         if (response?.accessToken) {
-          this.setToken(response.accessToken);
+          this.setToken(response.accessToken, response.expiresAt);
           this.setRefreshToken(response.refreshToken);
           this.setUser(response.user);
         }

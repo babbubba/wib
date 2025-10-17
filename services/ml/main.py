@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import sys
 import json
 from pathlib import Path
 
@@ -10,6 +11,16 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
 from sklearn.exceptions import NotFittedError
 import numpy as np
+
+# Add shared module to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from shared.redis_logger import RedisLogger, LogSeverity
+
+# Initialize Redis logger
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+LOG_STREAM_KEY = os.getenv("LOG_STREAM_KEY", "app_logs")
+LOG_LEVEL = LogSeverity(os.getenv("LOG_LEVEL", "INFO").upper())
+logger = RedisLogger("ml", REDIS_URL, LOG_STREAM_KEY, min_log_level=LOG_LEVEL)
 
 
 class PredictRequest(BaseModel):
@@ -193,23 +204,49 @@ app = FastAPI()
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(req: PredictRequest):
-    t, c = manager.predict(req.labelRaw, req.brand)
-    return PredictResponse(typeCandidates=t, categoryCandidates=c)
+async def predict(req: PredictRequest):
+    try:
+        await logger.debug("ML Prediction", f"Predicting for label: {req.labelRaw}", {"label": req.labelRaw})
+        t, c = manager.predict(req.labelRaw, req.brand)
+        await logger.debug("ML Prediction Complete", f"Returned {len(t)} type and {len(c)} category candidates", {
+            "label": req.labelRaw,
+            "typeCandidates": len(t),
+            "categoryCandidates": len(c)
+        })
+        return PredictResponse(typeCandidates=t, categoryCandidates=c)
+    except Exception as e:
+        await logger.error("ML Prediction Error", f"Error predicting for label: {req.labelRaw}", e, {"label": req.labelRaw})
+        raise
 
 
 @app.post("/feedback")
-def feedback(req: FeedbackRequest):
-    manager.feedback(req.labelRaw, req.brand, req.finalTypeId, req.finalCategoryId)
-    return {"status": "ok"}
+async def feedback(req: FeedbackRequest):
+    try:
+        await logger.info("ML Feedback", f"Received feedback for label: {req.labelRaw}", {
+            "label": req.labelRaw,
+            "finalTypeId": req.finalTypeId,
+            "finalCategoryId": req.finalCategoryId or "null"
+        })
+        manager.feedback(req.labelRaw, req.brand, req.finalTypeId, req.finalCategoryId)
+        await logger.info("ML Model Updated", "Model updated with feedback, training completed")
+        return {"status": "ok"}
+    except Exception as e:
+        await logger.error("ML Feedback Error", f"Error processing feedback for label: {req.labelRaw}", e, {"label": req.labelRaw})
+        raise
 
 
 @app.post("/train")
-def train(req: TrainRequest):
-    # Simple batch training from examples
-    for ex in req.examples:
-        manager.feedback(ex.labelRaw, ex.brand, ex.finalTypeId, ex.finalCategoryId)
-    return {"status": "ok"}
+async def train(req: TrainRequest):
+    try:
+        await logger.info("ML Batch Training", f"Starting batch training with {len(req.examples)} examples", {"exampleCount": len(req.examples)})
+        # Simple batch training from examples
+        for ex in req.examples:
+            manager.feedback(ex.labelRaw, ex.brand, ex.finalTypeId, ex.finalCategoryId)
+        await logger.info("ML Batch Training Complete", f"Model updated with {len(req.examples)} examples")
+        return {"status": "ok"}
+    except Exception as e:
+        await logger.error("ML Batch Training Error", f"Error during batch training", e, {"exampleCount": len(req.examples)})
+        raise
 
 
 @app.get("/health")
