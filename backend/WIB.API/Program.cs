@@ -135,12 +135,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             {
                 if (string.IsNullOrEmpty(context.Token))
                 {
-                    var path = context.HttpContext.Request.Path;
-                    if (path.StartsWithSegments("/monitoring/logs/stream") &&
-                        context.Request.Cookies.TryGetValue("wib_access_token", out var cookieToken) &&
-                        !string.IsNullOrWhiteSpace(cookieToken))
+                    var httpContext = context.HttpContext;
+                    var requestPath = httpContext.Request.Path;
+
+                    if (requestPath.StartsWithSegments("/monitoring/logs/stream"))
                     {
-                        context.Token = cookieToken;
+                        if (httpContext.Request.Cookies.TryGetValue("wib_access_token", out var cookieToken) &&
+                            !string.IsNullOrWhiteSpace(cookieToken))
+                        {
+                            context.Token = cookieToken;
+                        }
+                        else if (httpContext.Request.Query.TryGetValue("access_token", out var tokenValues))
+                        {
+                            var queryToken = tokenValues.ToString();
+                            if (!string.IsNullOrWhiteSpace(queryToken))
+                            {
+                                context.Token = queryToken;
+                            }
+                        }
                     }
                 }
 

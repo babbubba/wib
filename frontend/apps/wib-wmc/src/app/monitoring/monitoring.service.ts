@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { AuthService } from '../auth.service';
 
 export interface LogEntry {
   timestamp: string;
@@ -22,7 +23,7 @@ export interface ServiceStatus {
   providedIn: 'root'
 })
 export class MonitoringService {
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private auth: AuthService) {}
 
   /**
    * Connect to real-time log stream using Server-Sent Events
@@ -32,6 +33,11 @@ export class MonitoringService {
       const params = new URLSearchParams();
       if (level) params.append('level', level);
       if (source) params.append('source', source);
+
+      const token = this.auth.getToken();
+      if (token && !this.auth.isTokenExpired(token)) {
+        params.append('access_token', token);
+      }
 
       const url = `/api/monitoring/logs/stream${params.toString() ? '?' + params.toString() : ''}`;
       const eventSource = new EventSource(url);

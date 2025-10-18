@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using WIB.Application.Contracts.Monitoring;
@@ -29,13 +30,12 @@ public class MonitoringController : ControllerBase
     [HttpGet("logs/stream")]
     public async Task StreamLogs([FromQuery] string? level = null, [FromQuery] string? source = null, CancellationToken ct = default)
     {
-        Response.Headers.Add("Content-Type", "text/event-stream");
-        Response.Headers.Add("Cache-Control", "no-cache");
-        Response.Headers.Add("Connection", "keep-alive");
-        Response.Headers.Add("X-Accel-Buffering", "no"); // Disable nginx buffering for SSE
+        Response.Headers["Content-Type"] = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Connection"] = "keep-alive";
+        Response.Headers["X-Accel-Buffering"] = "no"; // Disable nginx buffering for SSE
 
-        const int heartbeatSeconds = 15;
-        var heartbeatInterval = TimeSpan.FromSeconds(heartbeatSeconds);
+        var heartbeatInterval = TimeSpan.FromSeconds(15);
 
         try
         {
@@ -46,55 +46,33 @@ public class MonitoringController : ControllerBase
 
             await using var enumerator = _logConsumer.StreamLogsAsync(level, source, ct).GetAsyncEnumerator(ct);
             var moveNextTask = enumerator.MoveNextAsync().AsTask();
-            var nextHeartbeatUtc = DateTime.UtcNow.Add(heartbeatInterval);
 
             while (!ct.IsCancellationRequested)
             {
-                var timeout = nextHeartbeatUtc - DateTime.UtcNow;
-                if (timeout < TimeSpan.Zero)
+                try
                 {
-                    timeout = TimeSpan.Zero;
+                    if (!await moveNextTask.WaitAsync(heartbeatInterval, ct))
+                    {
+                        break;
+                    }
                 }
-
-                Task delayTask = Task.Delay(timeout, ct);
-                Task completed = await Task.WhenAny(moveNextTask, delayTask);
-
-                if (completed == moveNextTask)
+                catch (TimeoutException)
                 {
-                    bool hasItem;
-                    try
-                    {
-                        hasItem = await moveNextTask;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-
-                    if (!hasItem)
-                    {
-                        break;
-                    }
-
-                    var logEntry = enumerator.Current;
-                    var json = JsonSerializer.Serialize(logEntry);
-                    await Response.WriteAsync($"data: {json}\n\n", ct);
-                    await Response.Body.FlushAsync(ct);
-
-                    moveNextTask = enumerator.MoveNextAsync().AsTask();
-                    nextHeartbeatUtc = DateTime.UtcNow.Add(heartbeatInterval);
-                }
-                else
-                {
-                    if (ct.IsCancellationRequested || delayTask.IsCanceled)
-                    {
-                        break;
-                    }
-
                     await Response.WriteAsync(": keep-alive\n\n", ct);
                     await Response.Body.FlushAsync(ct);
-                    nextHeartbeatUtc = DateTime.UtcNow.Add(heartbeatInterval);
+                    continue;
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                var logEntry = enumerator.Current;
+                var json = JsonSerializer.Serialize(logEntry);
+                await Response.WriteAsync($"data: {json}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+
+                moveNextTask = enumerator.MoveNextAsync().AsTask();
             }
         }
         catch (OperationCanceledException)

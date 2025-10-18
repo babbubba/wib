@@ -28,7 +28,21 @@ public class RedisLogConsumer : IAsyncDisposable
         string? source = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var lastId = "$"; // Start from the newest messages
+        // Initialize to the current last entry ID to start from new messages only
+        string lastId = "0-0";
+        try
+        {
+            var last = await _db.StreamRangeAsync(_streamKey, "-", "+", count: 1, messageOrder: Order.Descending);
+            if (last.Length > 0)
+            {
+                lastId = last[0].Id;
+            }
+        }
+        catch
+        {
+            // Fallback to beginning; any error here will just cause initial re-scan
+            lastId = "0-0";
+        }
 
         while (!ct.IsCancellationRequested)
         {
@@ -50,6 +64,8 @@ public class RedisLogConsumer : IAsyncDisposable
 
             foreach (var entry in entries)
             {
+                // StreamRead returns entries >= lastId; skip the one equal to lastId to avoid duplicates
+                if (entry.Id == lastId) continue;
                 lastId = entry.Id;
 
                 var json = entry.Values.FirstOrDefault(v => v.Name == "json").Value;
