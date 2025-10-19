@@ -53,6 +53,7 @@ public class StoresController : ControllerBase
         var store = new WIB.Domain.Store
         {
             Name = norm,
+            NameNormalized = NormalizeName(req.Name),
             Chain = req.Chain?.Trim()
         };
         _db.Stores.Add(store);
@@ -73,5 +74,27 @@ public class StoresController : ControllerBase
             return CreatedAtAction(nameof(Search), new { query = norm }, new StoreDto(store.Id, store.Name, loc.Address, loc.City, loc.PostalCode, loc.VatNumber, store.Chain));
         }
         return CreatedAtAction(nameof(Search), new { query = norm }, new StoreDto(store.Id, store.Name, null, null, null, null, store.Chain));
+    }
+    private static string NormalizeName(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+        var s = input.Trim().ToLowerInvariant();
+        s = RemoveDiacritics(s);
+        s = System.Text.RegularExpressions.Regex.Replace(s, "[^a-z0-9 ]", " ");
+        s = System.Text.RegularExpressions.Regex.Replace(s, "\\s+", " ").Trim();
+        return s;
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
+        var stringBuilder = new System.Text.StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+                stringBuilder.Append(c);
+        }
+        return stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
     }
 }

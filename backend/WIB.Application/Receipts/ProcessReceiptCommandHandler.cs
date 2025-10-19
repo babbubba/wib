@@ -108,6 +108,7 @@ namespace WIB.Application.Receipts
                 Store = existingStoreId.HasValue ? null : new WIB.Domain.Store
                 {
                     Name = kie.Store.Name,
+                    NameNormalized = Normalize(kie.Store.Name),
                     Chain = kie.Store.Chain
                 },
                 StoreLocation = new WIB.Domain.StoreLocation
@@ -256,9 +257,31 @@ namespace WIB.Application.Receipts
             if (!anyLetter) return true;
             return false;
         }
+
+        private static string Normalize(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+            var s = input.Trim().ToLowerInvariant();
+            s = RemoveDiacritics(s);
+            // keep alnum and spaces only
+            var arr = s.Select(ch => (char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch)) ? ch : ' ').ToArray();
+            s = new string(arr);
+            // collapse spaces
+            s = System.Text.RegularExpressions.Regex.Replace(s, "\\s+", " ").Trim();
+            return s;
+        }
+
+        private static string RemoveDiacritics(string text)
+        {
+            var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
+            var stringBuilder = new System.Text.StringBuilder();
+            foreach (var c in normalizedString)
+            {
+                var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+                    stringBuilder.Append(c);
+            }
+            return stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        }
     }
 }
-
-
-
-
