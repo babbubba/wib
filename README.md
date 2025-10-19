@@ -302,12 +302,37 @@ Proxy Nginx (container `proxy`):
   - Esempio (PowerShell):
     - `$env:TESSERACT_LANG = "ita+eng"; $env:TESSERACT_PSM = "6"; $env:TESSERACT_OEM = "3"`
   - Queste variabili influenzano sia `image_to_data` sia `image_to_string`.
+  - Docker Compose: il servizio `ocr` imposta già di default `TESSERACT_LANG=ita+eng`, `TESSERACT_PSM=6`, `TESSERACT_OEM=3` e `OCR_STUB=false` (vedi `docker-compose.yml`).
 
 - Sample di riferimento
   - JSON “ground truth” di esempio: `docs/sample_receipt.json` (adatta i valori al tuo scontrino reale).
   - Esecuzione rapida (OCR):
     - `docker compose build ocr && docker compose up -d ocr`
     - `curl -F "file=@docs/sample_receipt.jpg" http://localhost:8081/extract`
+
+### Attivazione Tesseract nel flusso di lettura
+
+- Prerequisiti
+  - Il container OCR include già Tesseract e i dati lingua italiani (`tesseract-ocr`, `tesseract-ocr-ita`).
+  - In `docker-compose.yml` l’API e il Worker puntano all’OCR: `Ocr__Endpoint: http://ocr:8081` (già presente nell’estratto compose).
+
+- Passi
+  1) Avviare il servizio OCR
+     - `docker compose up -d --build ocr`
+     - Verifica: `Invoke-WebRequest http://localhost:8081/health -UseBasicParsing`
+  2) Configurare i parametri Tesseract (facoltativi, consigliati)
+     - PowerShell (sessione corrente):
+       - `$env:TESSERACT_LANG = "ita+eng"; $env:TESSERACT_PSM = "6"; $env:TESSERACT_OEM = "3"`
+     - Oppure aggiungerli alla sezione `environment` del servizio `ocr` in `docker-compose.yml`.
+  3) Disabilitare lo stub (se vuoi forzare solo risultati reali)
+     - Imposta: `$env:OCR_STUB = "false"` e lascia vuoto `OCR_STUB_TEXT` (o non impostarlo).
+     - Nota: se Tesseract non estrae testo, il servizio può restituire `OCR_STUB_TEXT` come fallback.
+  4) Flusso end‑to‑end
+     - Con lo stack locale (`docker compose up -d`), il Worker recupera l’immagine da MinIO e chiama l’OCR all’endpoint `/extract` usando `Ocr__Endpoint`.
+     - La WMC e Devices non chiamano direttamente l’OCR in DEV; passano dall’API.
+  5) Smoke test manuale
+     - `curl -F "file=@docs/sample_receipt.jpg" http://localhost:8081/extract`
+     - Oppure via API (quando integrato nel Worker/API): carica uno scontrino da `Devices` e verifica i log Worker.
 
 ### Strumenti di sviluppo
 

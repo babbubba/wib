@@ -98,6 +98,12 @@ services:
       REDIS_URL: redis://redis:6379
       LOG_STREAM_KEY: app_logs
       LOG_LEVEL: Verbose
+      # Attiva Tesseract nel flusso OCR
+      TESSERACT_LANG: ita+eng
+      TESSERACT_PSM: "6"
+      TESSERACT_OEM: "3"
+      # Disabilita lo stub per usare risultati reali
+      OCR_STUB: "false"
     volumes:
       - ./.data/kie:/app/kie_models:ro
     ports:

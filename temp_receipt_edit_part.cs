@@ -1,142 +1,20 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Globalization;
-using WIB.Application.Contracts.Receipts;
-using WIB.Application.Interfaces;
-using WIB.Infrastructure.Data;
-using WIB.Domain;
-
-namespace WIB.API.Controllers
-{
-    [ApiController]
-    [Authorize(Roles = "wmc")]
-    [Route("receipts")]
-    public class ReceiptEditController : ControllerBase
-    {
-        private readonly WibDbContext _db;
-        private readonly IProductClassifier _classifier;
-
-        public ReceiptEditController(WibDbContext db, IProductClassifier classifier)
-        {
-            _db = db;
-            _classifier = classifier;
-        }
-
-        [HttpPost("{id:guid}/edit")]
-        public async Task<IActionResult> Edit(Guid id, [FromBody] EditReceiptRequest body, CancellationToken ct)
-        {
-            // Input validation
-            var validationResult = ValidateRequest(body);
-            if (validationResult != null)
-                return validationResult;
-
-            // Use a single transaction to avoid concurrency issues
-            await using var tx = await _db.Database.BeginTransactionAsync(ct);
-
-            try
-            {
-                // Load receipt with related data
-                var receipt = await LoadReceiptAsync(id, ct);
-                if (receipt == null)
-                    return NotFound();
-
-                var feedbackTargets = new List<(string Label, Guid TypeId, Guid CategoryId)>();
-
-                // Update receipt basic properties
-                await UpdateReceiptBasicPropertiesAsync(receipt, body, ct);
-
-                // Update store location if needed
-                await UpdateStoreLocationAsync(receipt, body, ct);
-
-                // Process line modifications
-                await ProcessLineModificationsAsync(receipt, body, feedbackTargets, ct);
-
-                // Track existing lines count before adding new ones (for reordering)
-                var existingLinesCountBeforeAdd = receipt.Lines.Count;
-
-                // Add new lines
-                await AddNewLinesAsync(receipt, body, feedbackTargets, ct);
-
-                // Apply line reordering (only to existing lines, not newly added)
-                ApplyLineReordering(receipt, body, existingLinesCountBeforeAdd);
-
-                // Finalize receipt (single SaveChanges at the end)
-                await FinalizeReceiptAsync(receipt, feedbackTargets, ct);
-
-                await tx.CommitAsync(ct);
-                return NoContent();
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct);
-                throw;
-            }
-        }
-
-        #region Private Methods
-
-        private IActionResult? ValidateRequest(EditReceiptRequest body)
-        {
-            // Validate new lines
-            if (body.AddLines?.Any(line => string.IsNullOrWhiteSpace(line.LabelRaw)) == true)
-                return BadRequest("addLines[].labelRaw è obbligatorio");
-
-            // Validate line modifications have valid indices
-            if (body.Lines?.Any(line => line.Index < 0) == true)
-                return BadRequest("lines[].index deve essere >= 0");
-
-            // Validate reordering array if present
-            if (body.Order != null && (body.Order.Any(i => i < 0) || body.Order.Distinct().Count() != body.Order.Count))
-                return BadRequest("order[] deve contenere indici validi e unici");
-
-            // Validate currency format if provided
-            if (!string.IsNullOrWhiteSpace(body.Currency) && body.Currency.Length > 10)
-                return BadRequest("currency troppo lunga (max 10 caratteri)");
-
-            // Validate numeric fields in new lines
-            if (body.AddLines?.Any(line => line.Qty < 0 || line.UnitPrice < 0 || line.LineTotal < 0) == true)
-                return BadRequest("addLines[] non può contenere valori negativi per qty, unitPrice, lineTotal");
-
-            // Validate numeric fields in line updates
-            if (body.Lines?.Any(line => line.Qty < 0 || line.UnitPrice < 0 || line.LineTotal < 0) == true)
-                return BadRequest("lines[] non può contenere valori negativi per qty, unitPrice, lineTotal");
-
-            return null;
-        }
-
-        private async Task<Receipt?> LoadReceiptAsync(Guid id, CancellationToken ct)
-        {
-            return await _db.Receipts
-                .Include(r => r.Store)
-                .Include(r => r.StoreLocation)
-                .Include(r => r.Lines)
-                .FirstOrDefaultAsync(r => r.Id == id, ct);
-        }
-
-        private async Task UpdateReceiptBasicPropertiesAsync(Receipt receipt, EditReceiptRequest body, CancellationToken ct)
-        {
-            // Update store
-            if (!string.IsNullOrWhiteSpace(body.StoreName))
-            {
-                await UpdateReceiptStoreAsync(receipt, body.StoreName.Trim(), ct);
-            }
-
-            // Update datetime and currency
-            if (body.Datetime.HasValue) 
-                receipt.Date = body.Datetime.Value;
-
-            if (!string.IsNullOrWhiteSpace(body.Currency)) 
-                receipt.Currency = body.Currency;
         }
 
         private async Task UpdateReceiptStoreAsync(Receipt receipt, string storeName, CancellationToken ct)
         {
-            // Delegate rename/merge logic to StoreService (EF-only, no raw SQL)
-            var storeSvc = HttpContext.RequestServices.GetRequiredService<IStoreService>();
-            var result = await storeSvc.RenameOrMergeAsync(receipt.StoreId, storeName, ct);
-            receipt.StoreId = result.Id;
-            receipt.Store = result;
+            var lower = storeName.ToLowerInvariant();
+            var store = await _db.Stores.FirstOrDefaultAsync(s => s.Name.ToLower() == lower, ct);
+            
+            if (store == null)
+            {
+                var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
+                store = new Store { Name = normalized };
+                _db.Stores.Add(store);
+                // Defer SaveChanges to the end (single transaction)
+            }
+            
+            receipt.StoreId = store.Id;
+            receipt.Store = store;
         }
 
         private async Task UpdateStoreLocationAsync(Receipt receipt, EditReceiptRequest body, CancellationToken ct)
