@@ -16,6 +16,9 @@ OCR_STUB_ENABLED = os.getenv("OCR_STUB", "false").lower() == "true"
 temp_stub_text = os.getenv("OCR_STUB_TEXT")
 OCR_STUB_TEXT = temp_stub_text if temp_stub_text is not None else "mock-ocr"
 
+# Select OCR engine: 'tesseract' (default) or 'paddle'
+OCR_ENGINE = os.getenv("OCR_ENGINE", "tesseract").strip().lower()
+
 # Initialize Redis logger
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 LOG_STREAM_KEY = os.getenv("LOG_STREAM_KEY", "app_logs")
@@ -239,6 +242,10 @@ def _get_tesseract_params() -> tuple[str, str]:
 
 def ocr_text(image_bytes: bytes) -> str:
     try:
+        if OCR_ENGINE == "paddle":
+            lines = ocr_lines(image_bytes)
+            return "\n".join([l.get("text", "") for l in lines])
+
         img = preprocess_image(image_bytes)
         lang, tess_cfg = _get_tesseract_params()
         # Prefer structured output to preserve visual row order
@@ -283,6 +290,32 @@ def ocr_text(image_bytes: bytes) -> str:
         return ""
 
 def ocr_lines(image_bytes: bytes) -> list[dict]:
+    if OCR_ENGINE == "paddle":
+        try:
+            from paddleocr import PaddleOCR  # type: ignore
+            img = preprocess_image(image_bytes)
+            import numpy as np  # type: ignore
+            arr = np.array(img)
+            ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+            result = ocr.ocr(arr, cls=True)
+            lines: list[dict] = []
+            for block in result:
+                for line in block:
+                    box, (text, conf) = line
+                    xs = [pt[0] for pt in box]
+                    ys = [pt[1] for pt in box]
+                    x1, y1 = int(min(xs)), int(min(ys))
+                    x2, y2 = int(max(xs)), int(max(ys))
+                    t = clean_line(text)
+                    if t:
+                        lines.append({'text': t, 'bbox': {'x': x1, 'y': y1, 'w': x2 - x1, 'h': y2 - y1}})
+            # Sort top-to-bottom
+            lines.sort(key=lambda l: l['bbox']['y'])
+            return lines
+        except Exception:
+            # Fallback to tesseract
+            pass
+
     from pytesseract import Output
     img = preprocess_image(image_bytes)
     lang, tess_cfg = _get_tesseract_params()
@@ -411,7 +444,11 @@ def parse_text_with_lines(lines_with_boxes: list[dict]) -> dict:
 
 def clean_line(s: str) -> str:
     s = s.strip()
-    # Replace weird unicode spaces and normalize commas
+    # Replace separators and odd glyphs often seen in receipts
+    s = s.replace('|', ' ').replace('«', ' ').replace('»', ' ')
+    # Normalize quotes/apostrophes
+    s = s.replace('’', "'").replace('`', "'")
+    # Collapse whitespace
     s = re.sub(r"\s+", " ", s)
     return s
 
@@ -608,7 +645,7 @@ def infer_items(lines: list[str]) -> list[dict]:
     price_only_re = re.compile(r"^\s*(?:€|EUR)?\s*(-?\d+[\.,]\d{2})\s*$", re.I)
     qty_x_price_re = re.compile(r"(?P<label>.+?)\s+(?P<qty>\d+(?:[\.,]\d+)?)\s*[xX]\s*(?P<unit>-?\d+[\.,]\d{2})\s+(?P<tot>-?\d+[\.,]\d{2})(?:.*?(?P<vat>\d{1,2}(?:[\.,]\d+)?%))?$")
     label_price_re = re.compile(r"(?P<label>.+?)\s+(?P<tot>-?\d+[\.,]\d{2})(?:.*?(?P<vat>\d{1,2}(?:[\.,]\d+)?%))?$")
-    blacklist_re = re.compile(r"\b(TOTALE\s+COMPLESSIVO|TOTALE\s+EURO|TOTALE|SUBTOTALE|PAGAMENTO|RESTO|SCONTO|BANCOMAT|CARTA\s+DI\s+CREDITO|CONTANTI|ARTICOLI|IMPORTO|CASSA)\b", re.I)
+    blacklist_re = re.compile(r"\b(TOTALE\s+COMPLESSIVO|TOTALE\s+EURO|TOTALE|SUBTOTALE|PAGAMENTO|RESTO|SCONTO|BANCOMAT|CARTA\s+DI\s+CREDITO|CONTANTI|ARTICOLI|IMPORTO|CASSA|SEPARATORE|DI\s*CUI\s*IVA)\b", re.I)
     price_fallback = re.compile(r"(?P<val>-?\d+[\.,]\d{2})")
     count = len(lines)
     i = 0
@@ -621,7 +658,12 @@ def infer_items(lines: list[str]) -> list[dict]:
             i += 1
             continue
         text_line = raw.strip()
-        if not text_line or blacklist_re.search(text_line):
+        has_amount = bool(price_fallback.search(text_line))
+        if not text_line:
+            i += 1
+            continue
+        # Allow 'REPARTO' lines only if they contain a price amount
+        if blacklist_re.search(text_line) and not has_amount:
             i += 1
             continue
         qty = None
@@ -751,26 +793,102 @@ def infer_items(lines: list[str]) -> list[dict]:
     return items
 def infer_totals(lines: list[str], items: list[dict]) -> dict:
     totals = {"subtotal": 0.0, "tax": 0.0, "total": 0.0}
-    text_lines = list(lines)
-    # Search totals keywords
-    for l in text_lines[::-1]:
-        if re.search(r"TOTALE\s*\w*|TOTAL", l, re.I):
-            val = parse_number(l)
-            if val is not None:
-                totals["total"] = val
-                break
-    for l in text_lines:
-        if re.search(r"SUB\s*TOTAL|SUBTOTALE", l, re.I):
-            val = parse_number(l)
-            if val is not None:
-                totals["subtotal"] = val
-    for l in text_lines:
-        if re.search(r"IVA|VAT|TAX", l, re.I):
-            val = parse_number(l)
-            if val is not None:
-                totals["tax"] = val
-    if not totals["subtotal"]:
-        totals["subtotal"] = sum(it["total"] for it in items)
-    if not totals["total"]:
-        totals["total"] = totals["subtotal"] + totals["tax"]
-    return totals
+    # Candidates
+    total_cands: list[tuple[int, float]] = []  # (idx, value)
+    subtotal_cands: list[tuple[int, float]] = []
+    tax_cands: list[tuple[int, float]] = []
+
+    # Helper regex
+    re_total = re.compile(r"(?<!sub)totale(?:\s+(?:euro|da\s+pagare))?[:\s€]*([-]?\d+[\.,]\d{2})|importo\s*totale[:\s€]*([-]?\d+[\.,]\d{2})", re.I)
+    re_sub = re.compile(r"sub\s*totale[:\s]*([-]?\d+[\.,]\d{2})", re.I)
+    # Match IVA amount with optional currency symbol and separators
+    re_tax_amount = re.compile(r"(?:di\s*cui\s*)?iva[^\d%€]*[:\-\s]*[€]?(\s*)?([-]?\d+[\.,]\d{2})", re.I)
+    re_tax_pct = re.compile(r"iva[^\d%]*(\d{1,2}(?:[\.,]\d+)?)%", re.I)
+
+    for idx, l in enumerate(lines):
+        m = re_total.search(l)
+        if m:
+            grp = m.group(1) or m.group(2)
+            v = parse_number(grp)
+            if v is not None:
+                total_cands.append((idx, v))
+        m = re_sub.search(l)
+        if m:
+            v = parse_number(m.group(1))
+            if v is not None:
+                subtotal_cands.append((idx, v))
+        # Only capture monetary amounts for IVA, ignore pure percentages
+        m = re_tax_amount.search(l)
+        if m and not re.search(r"%", m.group(0)):
+            # prefer the numeric capture group with amount
+            grp = m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(1)
+            v = parse_number(grp)
+            if v is not None:
+                tax_cands.append((idx, v))
+
+    subtotal_est = sum(it["total"] for it in items)
+    # Choose subtotal
+    if subtotal_cands:
+        # Take the one closest to items sum
+        subtotal = min((abs(v - subtotal_est), v) for _, v in subtotal_cands)[1]
+    else:
+        subtotal = subtotal_est
+
+    # Choose total
+    if total_cands:
+        # Prefer bottom-most candidate reasonably close to subtotal
+        # Score by distance from subtotal and by position weight
+        scored = []
+        n = len(lines)
+        for idx, v in total_cands:
+            dist = abs(v - subtotal)
+            posw = 1.0 + (idx / max(n, 1))  # prefer later lines
+            scored.append((dist * 1.0 / posw, v))
+        total = min(scored)[1]
+    else:
+        # Fallback: take last monetary amount in bottom lines
+        bottom = lines[-6:]
+        last_val = None
+        for l in bottom[::-1]:
+            m = re.search(r"(-?\d+[\.,]\d{2})", l)
+            if m:
+                last_val = parse_number(m.group(1))
+                if last_val is not None:
+                    break
+        total = last_val or 0.0
+
+    # Choose tax
+    tax = 0.0
+    if tax_cands:
+        # Prefer bottom-most tax amount within the last 8 lines
+        last_window_start = max(0, len(lines) - 8)
+        window = [c for c in tax_cands if c[0] >= last_window_start]
+        if window:
+            tax = window[-1][1]
+        else:
+            tax = tax_cands[-1][1]
+    elif total and subtotal and total >= subtotal:
+        tax = total - subtotal
+
+    # Sanity checks
+    if subtotal < 0:
+        subtotal = 0.0
+    if total == 0.0:
+        total = max(subtotal + tax, subtotal)
+    # If tax looks implausible (>50% of total), try recompute from any IVA %
+    if total > 0 and tax > total * 0.5:
+        # Scan for IVA % and compute tax from subtotal (take highest reasonable <= 25%)
+        pct_vals: list[float] = []
+        for l in lines:
+            m = re_tax_pct.search(l)
+            if m:
+                pv = parse_number(m.group(1))
+                if pv is not None and 0 < pv <= 25:
+                    pct_vals.append(pv)
+        if pct_vals:
+            tax = round(subtotal * (max(pct_vals) / 100.0), 2)
+    # If total still far from subtotal+tax, snap to that
+    if abs((subtotal + tax) - total) > max(0.2, (subtotal + tax) * 0.2):
+        total = round(subtotal + tax, 2)
+
+    return {"subtotal": float(subtotal), "tax": float(tax), "total": float(total)}

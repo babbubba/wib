@@ -2,6 +2,15 @@ import io
 from typing import Optional
 
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
+import numpy as np
+import os
+
+try:
+    from services.ocr.receipt_detection import detect_and_warp  # type: ignore
+except Exception:
+    detect_and_warp = None  # type: ignore
+
+OCR_DETECTOR_ENABLED = os.getenv("OCR_DETECTOR_ENABLED", "true").strip().lower() == "true"
 
 
 def _deskew_cv2(arr):
@@ -80,6 +89,14 @@ def preprocess_image(image_bytes: bytes) -> Image.Image:
     with Image.open(io.BytesIO(image_bytes)) as raw:
         # Normalize orientation from EXIF
         img = ImageOps.exif_transpose(raw)
+        # Optional: receipt detection + warp before grayscale
+        if OCR_DETECTOR_ENABLED and detect_and_warp is not None:
+            try:
+                bgr = np.array(img)[..., ::-1]
+                warped_bgr, meta = detect_and_warp(bgr)
+                img = Image.fromarray(warped_bgr[..., ::-1])
+            except Exception:
+                pass
         # Convert to grayscale early
         img = ImageOps.grayscale(img)
 
@@ -97,4 +114,3 @@ def preprocess_image(image_bytes: bytes) -> Image.Image:
             pass
 
         return out
-

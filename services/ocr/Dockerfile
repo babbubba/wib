@@ -32,5 +32,14 @@ RUN sed -n '1,200p' /app/services/ocr/requirements.txt >/dev/null 2>&1 || true \
 COPY services/shared /app/services/shared
 COPY services/ocr /app/services/ocr
 
+# Default detector env (overridable)
+ENV OCR_DETECTOR_ENABLED=true \
+    RECEIPT_DETECTOR_WEIGHTS=/models/receipt_yolov8n.pt \
+    RECEIPT_DETECTOR_CONF=0.25 \
+    RECEIPT_DETECTOR_IOU=0.5 \
+    RECEIPT_DETECTOR_DEVICE=auto
+
+RUN mkdir -p /models
+
 EXPOSE 8081
 CMD ["uvicorn","services.ocr.main:app","--host","0.0.0.0","--port","8081"]
