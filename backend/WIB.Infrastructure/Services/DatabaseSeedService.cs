@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using WIB.Domain;
 using WIB.Infrastructure.Data;
 
@@ -23,6 +26,7 @@ public class DatabaseSeedService
             await SeedRolesAsync();
             await SeedDefaultUsersAsync();
             await SeedDefaultStoresAsync();
+            await NormalizeAndDedupStoresAsync();
         }
         catch (Exception ex)
         {
@@ -153,9 +157,81 @@ public class DatabaseSeedService
             new Store { Id = Guid.NewGuid(), Name = "PENNY Market" }
         };
 
+        // Normalize names for newly seeded stores
+        foreach (var s in stores)
+        {
+            s.NameNormalized = Normalize(s.Name);
+        }
+
         _context.Stores.AddRange(stores);
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Created {StoreCount} default stores", stores.Length);
+    }
+
+    private async Task NormalizeAndDedupStoresAsync()
+    {
+        // Fill NameNormalized for any existing store missing it or blank
+        var toFill = await _context.Stores.Where(s => s.NameNormalized == null || s.NameNormalized == "").ToListAsync();
+        foreach (var s in toFill)
+        {
+            s.NameNormalized = Normalize(s.Name);
+        }
+        if (toFill.Count > 0)
+        {
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("[StoreSeed] Filled NameNormalized for {Count} stores", toFill.Count);
+        }
+
+        // Deduplicate by NameNormalized
+        var dupGroups = await _context.Stores
+            .GroupBy(s => s.NameNormalized!)
+            .Where(g => g.Key != null && g.Count() > 1)
+            .Select(g => new { g.Key, Ids = g.Select(s => s.Id).ToList() })
+            .ToListAsync();
+
+        foreach (var grp in dupGroups)
+        {
+            var targetId = grp.Ids.OrderBy(x => x).First();
+            var others = grp.Ids.Where(id => id != targetId).ToList();
+            var target = await _context.Stores.FirstAsync(s => s.Id == targetId);
+            foreach (var otherId in others)
+            {
+                var current = await _context.Stores.FirstAsync(s => s.Id == otherId);
+                await _context.Receipts.Where(r => r.StoreId == current.Id).ForEachAsync(r => r.StoreId = target.Id);
+
+                if (string.IsNullOrWhiteSpace(target.Chain) && !string.IsNullOrWhiteSpace(current.Chain))
+                    target.Chain = current.Chain;
+
+                if (!string.IsNullOrWhiteSpace(current.NameNormalized))
+                    _context.StoreAliases.Add(new StoreAlias { StoreId = target.Id, AliasNormalized = current.NameNormalized! });
+
+                _context.Stores.Remove(current);
+            }
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("[StoreSeed] Merged {Count} duplicates into {Target}", others.Count, targetId);
+        }
+    }
+
+    private static string Normalize(string input)
+    {
+        input = (input ?? string.Empty).Trim().ToLowerInvariant();
+        input = RemoveDiacritics(input);
+        input = Regex.Replace(input, "[^a-z0-9 ]", " ");
+        input = Regex.Replace(input, "\\s+", " ").Trim();
+        return input;
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        var normalizedString = text.Normalize(NormalizationForm.FormD);
+        var stringBuilder = new StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+                stringBuilder.Append(c);
+        }
+        return stringBuilder.ToString().Normalize(NormalizationForm.FormC);
     }
 }

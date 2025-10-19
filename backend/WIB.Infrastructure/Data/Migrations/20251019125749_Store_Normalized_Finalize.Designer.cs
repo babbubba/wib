@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using WIB.Infrastructure.Data;
@@ -11,9 +12,11 @@ using WIB.Infrastructure.Data;
 namespace WIB.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(WibDbContext))]
-    partial class WibDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251019125749_Store_Normalized_Finalize")]
+    partial class Store_Normalized_Finalize
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

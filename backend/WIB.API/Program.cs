@@ -48,7 +48,6 @@ builder.Services.AddScoped<IStoreService, WIB.Infrastructure.Services.StoreServi
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<DatabaseSeedService>();
-builder.Services.AddHostedService<WIB.API.Services.StoreBackfillHostedService>();
 
 // Database configuration
 var connectionString = builder.Configuration.GetConnectionString("Default")

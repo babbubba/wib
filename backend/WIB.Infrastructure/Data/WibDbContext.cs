@@ -142,8 +142,9 @@ public class WibDbContext : DbContext
         modelBuilder.Entity<Store>(b =>
         {
             b.Property(s => s.Name).HasMaxLength(256).IsRequired();
-            b.Property(s => s.NameNormalized).HasMaxLength(256).IsRequired(false);
-            // Unique index will be enforced in a later migration (finalize step)
+            // After finalize migration, NameNormalized is required + unique
+            b.Property(s => s.NameNormalized).HasMaxLength(256).IsRequired();
+            b.HasIndex(s => s.NameNormalized).IsUnique();
         });
 
         modelBuilder.Entity<StoreAlias>(b =>
