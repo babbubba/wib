@@ -38,11 +38,11 @@ export class LoginComponent {
     if (this.form.invalid) { this.error.set('Username e password richiesti'); return; }
     const { username, password } = this.form.value as any;
     this.auth.login(username, password).subscribe({
-      next: (t) => {
-        if (t) this.router.navigate([this.returnUrl()]);
+      next: (response) => {
+        if (response?.accessToken) this.router.navigate([this.returnUrl()]);
         else this.error.set('Risposta di login non valida');
       },
-      error: (e) => this.error.set(e?.message || 'Login fallito'),
+      error: (e) => this.error.set(e?.error?.error || e?.message || 'Login fallito'),
     });
   }
 }

@@ -28,17 +28,22 @@
     <button class="btn btn-outline-primary btn-sm mb-2" (click)="loadReceipts()">Aggiorna lista</button>
     <ul class="list-group">
       <li class="list-group-item d-flex justify-content-between align-items-center" *ngFor="let r of receipts()" (click)="select(r)" style="cursor:pointer">
-        <span>{{ r.datetime | date:'short' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
+        <span>{{ r.datetime | date:'dd/MM/yyyy HH:mm' }} - {{ r.storeName || 'N/D' }} - {{ r.total | number:'1.2-2' }} EUR</span>
       </li>
     </ul>
   </section>
 
   <section *ngIf="selected() as rec" class="mb-3">
-    <h5>Review / Modifica</h5>
-    <div class="card card-body mb-3">
+    <h5 class="d-flex justify-content-between align-items-center">
+      <span>Review / Modifica</span>
+      <button class="btn btn-outline-danger btn-sm" (click)="deleteSelected()" [disabled]="deleting()">Elimina scontrino</button>
+    </h5>
+    <div class="row">
+      <div class="col-12 col-lg-7">
+        <div class="card card-body compact-card store-info-compact mb-2">
       <div class="row g-2 align-items-center">
         <div class="col-12 col-md-4">
-          <label class="form-label">Negozio</label>
+          <label class="form-label compact-form-label">Negozio</label>
           <ng-select
             [items]="storeSugs()"
             bindLabel="name"
@@ -47,6 +52,7 @@
             [clearable]="true"
             [minTermLength]="2"
             (search)="onStoreSearch($event.term)"
+            (focus)="highlightStore()"
             (change)="chooseStore($event)"
             [ngModel]="{ name: editStoreName() }"
             (ngModelChange)="editStoreName.set($event?.name||'')">
@@ -59,82 +65,83 @@
           </ng-select>
         </div>
         <div class="col-12 col-sm-6 col-md-4">
-          <label class="form-label">Data/Ora</label>
-          <input type="datetime-local" class="form-control" [value]="editDatetime()" (input)="editDatetime.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">Data/Ora</label>
+          <input type="datetime-local" class="form-control compact-input" [value]="editDatetime()" (input)="editDatetime.set($any($event.target).value)" />
         </div>
         <div class="col-6 col-sm-3 col-md-2">
-          <label class="form-label">Valuta</label>
-          <input class="form-control" [value]="editCurrency()" (input)="editCurrency.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">Valuta</label>
+          <input class="form-control compact-input" [value]="editCurrency()" (input)="editCurrency.set($any($event.target).value)" />
         </div>
         <div class="col-12 col-sm-3 col-md-2 d-grid">
-          <label class="form-label invisible">Azione</label>
-          <button class="btn btn-success" (click)="saveEdits()">Salva modifiche</button>
+          <label class="form-label compact-form-label invisible">Azione</label>
+          <button class="btn btn-success btn-sm" (click)="saveEdits()">Salva</button>
         </div>
       </div>
       <div class="row g-2 mt-1">
         <div class="col-12 col-md-5">
-          <label class="form-label">Indirizzo</label>
-          <input class="form-control" [value]="editStoreAddress()" (input)="editStoreAddress.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">Indirizzo</label>
+          <input class="form-control compact-input" [value]="editStoreAddress()" (input)="editStoreAddress.set($any($event.target).value)" />
         </div>
         <div class="col-6 col-md-3">
-          <label class="form-label">Città</label>
-          <input class="form-control" [value]="editStoreCity()" (input)="editStoreCity.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">Città</label>
+          <input class="form-control compact-input" [value]="editStoreCity()" (input)="editStoreCity.set($any($event.target).value)" />
         </div>
         <div class="col-6 col-md-2">
-          <label class="form-label">CAP</label>
-          <input class="form-control" [value]="editStorePostalCode()" (input)="editStorePostalCode.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">CAP</label>
+          <input class="form-control compact-input" [value]="editStorePostalCode()" (input)="editStorePostalCode.set($any($event.target).value)" />
         </div>
         <div class="col-12 col-md-2">
-          <label class="form-label">Partita IVA</label>
-          <input class="form-control" [value]="editStoreVatNumber()" (input)="editStoreVatNumber.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">P.IVA</label>
+          <input class="form-control compact-input" [value]="editStoreVatNumber()" (input)="editStoreVatNumber.set($any($event.target).value)" />
         </div>
       </div>
-    </div>
-    <div *ngFor="let l of rec.lines; let i = index" class="card card-body mb-2">
+        </div>
+        <div cdkDropList (cdkDropListDropped)="drop($event)">
+        <div *ngFor="let l of rec.lines; let i = index" class="card card-body line-card line-card-compact" [class.selected-line]="selectedLineIndex() === i" (click)="selectLine(i)" cdkDrag>
       <div class="row g-2 align-items-end">
         <div class="col-12 col-md-6 position-relative">
-          <label class="form-label">Etichetta</label>
-          <input class="form-control" [value]="editLines()[i].labelRaw" (input)="onLineChange(i,'labelRaw', $any($event.target).value)" />
+          <label class="form-label compact-form-label">Etichetta</label>
+          <input class="form-control compact-input" [value]="editLines()[i].labelRaw" (input)="onLineChange(i,'labelRaw', $any($event.target).value)" (click)="$event.stopPropagation()" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Q.tà</label>
-          <input type="number" step="0.001" class="form-control" [value]="editLines()[i].qty" (input)="onLineChange(i,'qty', $any($event.target).value)" />
+          <label class="form-label compact-form-label">Q.tà</label>
+          <input type="number" step="0.001" class="form-control compact-input" [value]="editLines()[i].qty" (input)="onLineChange(i,'qty', $any($event.target).value)" (click)="$event.stopPropagation()" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Prezzo</label>
-          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].unitPrice" (input)="onLineChange(i,'unitPrice', $any($event.target).value)" />
+          <label class="form-label compact-form-label">Prezzo</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="editLines()[i].unitPrice" (input)="onLineChange(i,'unitPrice', $any($event.target).value)" (click)="$event.stopPropagation()" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Totale</label>
-          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].lineTotal" (input)="onLineChange(i,'lineTotal', $any($event.target).value)" />
+          <label class="form-label compact-form-label">Totale</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="editLines()[i].lineTotal" (input)="onLineChange(i,'lineTotal', $any($event.target).value)" (click)="$event.stopPropagation()" />
         </div>
         <div class="col-12 col-md-3">
-          <label class="form-label">Categoria</label>
+          <label class="form-label compact-form-label">Merceologia</label>
           <ng-select
-            [items]="catSugs()[i] || []"
+            [items]="typeSugs()[i] || []"
             bindLabel="name"
             bindValue="id"
             [searchable]="true"
             [clearable]="true"
             [minTermLength]="2"
-            (search)="onCategorySearch(i, $event.term)"
-            [ngModel]="editLines()[i].categoryId || null"
-            (ngModelChange)="onCategoryIdChange(i, $event)">
+            (search)="onTypeSearch(i, $event.term)"
+            [ngModel]="editLines()[i].typeId || null"
+            (ngModelChange)="onTypeIdChange(i, $event)">
           </ng-select>
-          <div class="mt-1" *ngIf="!editLines()[i]?.categoryId && (editLines()[i]?.categoryName || '').length >= 2">
-            <button type="button" class="btn btn-link p-0" (click)="createCategory(i)">Crea "{{ editLines()[i].categoryName }}"</button>
+          <div class="mt-1" *ngIf="!editLines()[i]?.typeId && (editLines()[i]?.typeName || '').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createType(i)">Crea "{{ editLines()[i].typeName }}"</button>
           </div>
         </div>
         <div class="col-6 col-md-1">
-          <label class="form-label">IVA %</label>
-          <input type="number" step="0.01" class="form-control" [value]="editLines()[i].vatRate || ''" (input)="onLineChange(i,'vatRate', $any($event.target).value)" />
+          <label class="form-label compact-form-label">IVA %</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="editLines()[i].vatRate || ''" (input)="onLineChange(i,'vatRate', $any($event.target).value)" (click)="$event.stopPropagation()" />
         </div>
         <div class="col-auto">
-          <label class="form-label invisible">x</label>
-          <button class="btn btn-sm btn-outline-danger" (click)="removeLine(i)">Elimina</button>
+          <label class="form-label compact-form-label invisible">x</label>
+          <button class="btn btn-sm btn-outline-danger" (click)="removeLine(i); $event.stopPropagation()">X</button>
         </div>
         <div class="col-auto">
-          <button class="btn btn-sm btn-outline-secondary" (click)="suggest(editLines()[i].labelRaw || l.labelRaw, i)">Suggerisci</button>
+          <button class="btn btn-sm btn-outline-secondary" (click)="suggest(editLines()[i].labelRaw || l.labelRaw, i); $event.stopPropagation()">Suggest</button>
         </div>
       </div>
       <div *ngIf="sugs()[i] as s" class="row g-2">
@@ -145,60 +152,72 @@
           <button class="btn btn-sm btn-outline-primary me-1 mb-1" *ngFor="let c of s.categoryCandidates" (click)="feedback(l.labelRaw, null, c.id)">{{ c.id }} ({{ c.conf | number:'1.0-2' }})</button>
         </div>
       </div>
-    </div>
+        </div>
 
-    <div class="card card-body border-success">
+        </div>
+
+        <div class="add-line-section">
       <h6 class="mb-2">Aggiungi riga</h6>
       <div class="row g-2 align-items-end">
         <div class="col-12 col-md-5">
-          <label class="form-label">Etichetta</label>
-          <input class="form-control" [value]="newLabel()" (input)="newLabel.set($any($event.target).value)" />
+          <label class="form-label compact-form-label">Etichetta</label>
+          <input class="form-control compact-input" [value]="newLabel()" (input)="newLabel.set($any($event.target).value)" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Q.tà</label>
-          <input type="number" step="0.001" class="form-control" [value]="newQty()" (input)="newQty.set(+$any($event.target).value)" />
+          <label class="form-label compact-form-label">Q.tà</label>
+          <input type="number" step="0.001" class="form-control compact-input" [value]="newQty()" (input)="newQty.set(+$any($event.target).value)" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Prezzo</label>
-          <input type="number" step="0.01" class="form-control" [value]="newUnitPrice()" (input)="newUnitPrice.set(+$any($event.target).value)" />
+          <label class="form-label compact-form-label">Prezzo</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="newUnitPrice()" (input)="newUnitPrice.set(+$any($event.target).value)" />
         </div>
         <div class="col-4 col-md-2">
-          <label class="form-label">Totale</label>
-          <input type="number" step="0.01" class="form-control" [value]="newLineTotal()" (input)="newLineTotal.set(+$any($event.target).value)" />
+          <label class="form-label compact-form-label">Totale</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="newLineTotal()" (input)="newLineTotal.set(+$any($event.target).value)" />
         </div>
         <div class="col-6 col-md-1">
-          <label class="form-label">IVA %</label>
-          <input type="number" step="0.01" class="form-control" [value]="newVat() || ''" (input)="newVat.set(+$any($event.target).value)" />
+          <label class="form-label compact-form-label">IVA %</label>
+          <input type="number" step="0.01" class="form-control compact-input" [value]="newVat() || ''" (input)="newVat.set(+$any($event.target).value)" />
         </div>
         <div class="col-12 col-md-4">
-          <label class="form-label">Categoria</label>
+          <label class="form-label compact-form-label">Merceologia</label>
           <ng-select
-            [items]="catSugs()[-1] || []"
+            [items]="typeSugs()[-1] || []"
             bindLabel="name"
             bindValue="id"
             [searchable]="true"
             [clearable]="true"
             [minTermLength]="2"
-            (search)="onCategorySearch(-1, $event.term); newCatName.set(($event.term||'').toString()); newCatId.set(undefined)"
-            [ngModel]="newCatId() || null"
-            (ngModelChange)="newCatId.set($event)">
+            (search)="onTypeSearch(-1, $event.term); newTypeName.set(($event.term||'').toString()); newTypeId.set(undefined)"
+            [ngModel]="newTypeId() || null"
+            (ngModelChange)="newTypeId.set($event)">
           </ng-select>
-          <div class="mt-1" *ngIf="!newCatId() && (newCatName()||'').length >= 2">
-            <button type="button" class="btn btn-link p-0" (click)="createCategory(-1)">Crea "{{ newCatName() }}"</button>
+          <div class="mt-1" *ngIf="!newTypeId() && (newTypeName()||'').length >= 2">
+            <button type="button" class="btn btn-link p-0" (click)="createType(-1)">Crea "{{ newTypeName() }}"</button>
           </div>
         </div>
         <div class="col-12 col-md-2 d-grid">
-          <label class="form-label invisible">Azione</label>
-          <button class="btn btn-success" (click)="addNewLine()">Aggiungi</button>
+          <label class="form-label compact-form-label invisible">Azione</label>
+          <button class="btn btn-success btn-sm" (click)="addNewLine()">Aggiungi</button>
+        </div>
+      </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div class="sticky-image-container">
+          <section *ngIf="imageUrl()">
+            <h6>Immagine scontrino</h6>
+            <div class="image-wrapper">
+              <img [src]="imageUrl()" alt="receipt" class="img-fluid" (load)="onImageLoad($event)"/>
+              <div class="ocr-box-overlay" [ngStyle]="highlightStyle()"></div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
   </section>
 
-  <section *ngIf="imageUrl()">
-    <h5>Immagine scontrino</h5>
-    <img [src]="imageUrl()" alt="receipt" class="img-fluid rounded border"/>
-  </section>
 
   <div *ngIf="error()" class="alert alert-danger mt-2">{{error()}}</div>
 </main>
+

@@ -1,15 +1,26 @@
 ﻿import os
+import sys
 import base64
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Tuple
 
+# Add shared module to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from shared.redis_logger import RedisLogger, LogSeverity
+
 app = FastAPI()
 
 OCR_STUB_ENABLED = os.getenv("OCR_STUB", "false").lower() == "true"
 temp_stub_text = os.getenv("OCR_STUB_TEXT")
 OCR_STUB_TEXT = temp_stub_text if temp_stub_text is not None else "mock-ocr"
+
+# Initialize Redis logger
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+LOG_STREAM_KEY = os.getenv("LOG_STREAM_KEY", "app_logs")
+LOG_LEVEL = LogSeverity(os.getenv("LOG_LEVEL", "INFO").upper())
+logger = RedisLogger("ocr", REDIS_URL, LOG_STREAM_KEY, min_log_level=LOG_LEVEL)
 
 # --- KIE engine wiring (PP-Structure / Donut) ---
 
@@ -75,8 +86,13 @@ class KieEngine:
             self.detail = "No KIE model configured; using stub"
 
     def infer_image(self, image_bytes: bytes) -> dict:
-        text = ocr_text(image_bytes)
-        return parse_text(text)
+        # Prefer structured parsing with line boxes
+        try:
+            lines = ocr_lines(image_bytes)
+            return parse_text_with_lines(lines)
+        except Exception:
+            text = ocr_text(image_bytes)
+            return parse_text(text)
 
 
 KIE = KieEngine()
@@ -88,17 +104,31 @@ def health():
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
-    data = await file.read()
-    if OCR_STUB_ENABLED and OCR_STUB_TEXT:
-        return JSONResponse({"text": OCR_STUB_TEXT})
-    if not data:
-        return JSONResponse({"text": ""})
-    text_value = ocr_text(data)
-    if not text_value.strip():
-        if OCR_STUB_TEXT:
+    try:
+        await logger.info("OCR Request", f"Received OCR extraction request, file: {file.filename}", {"fileSize": file.size})
+
+        data = await file.read()
+        if OCR_STUB_ENABLED and OCR_STUB_TEXT:
+            await logger.debug("OCR Stub", "Using stub OCR mode")
             return JSONResponse({"text": OCR_STUB_TEXT})
-        return JSONResponse({"text": ""})
-    return JSONResponse({"text": text_value})
+        if not data:
+            await logger.warning("Empty Image", "Received empty image data")
+            return JSONResponse({"text": ""})
+
+        await logger.info("Preprocessing Image", f"Preprocessing image for OCR, size: {len(data)} bytes")
+        text_value = ocr_text(data)
+
+        if not text_value.strip():
+            await logger.warning("No Text Extracted", "OCR returned empty text")
+            if OCR_STUB_TEXT:
+                return JSONResponse({"text": OCR_STUB_TEXT})
+            return JSONResponse({"text": ""})
+
+        await logger.info("OCR Complete", f"Text extracted successfully, length: {len(text_value)} chars", {"textLength": len(text_value)})
+        return JSONResponse({"text": text_value})
+    except Exception as e:
+        await logger.error("OCR Error", f"Error during OCR extraction: {str(e)}", e)
+        raise
 
 
 class KieRequest(BaseModel):
@@ -136,28 +166,40 @@ class KieResponse(BaseModel):
 
 @app.post("/kie")
 async def kie(req: KieRequest):
-    # Se disponibile, e se viene fornita un'immagine, usa il motore KIE configurato
-    if req.image_b64 and KIE.kind != "stub" and KIE.ready:
-        try:
-            img_bytes = base64.b64decode(req.image_b64)
-            pred = KIE.infer_image(img_bytes)
-            return JSONResponse(pred)
-        except Exception:
-            # Fallback a stub se l'inferenza fallisce
-            pass
-
-    # Heuristic parsing based on OCR text
     try:
-        pred = parse_text(req.text or "")
-        return JSONResponse(pred)
-    except Exception:
-        return JSONResponse(KieResponse(
-            store=KieStore(name=""),
-            datetime="",
-            currency="EUR",
-            lines=[],
-            totals=KieTotals(subtotal=0.0, tax=0.0, total=0.0),
-        ).model_dump())
+        await logger.info("KIE Request", "Received KIE extraction request", {"textLength": len(req.text or ""), "hasImage": req.image_b64 is not None})
+
+        # Se disponibile, e se viene fornita un'immagine, usa il motore KIE configurato
+        if req.image_b64 and KIE.kind != "stub" and KIE.ready:
+            try:
+                await logger.info("KIE Model Inference", f"Using {KIE.kind} model for KIE extraction")
+                img_bytes = base64.b64decode(req.image_b64)
+                pred = KIE.infer_image(img_bytes)
+                await logger.info("KIE Complete", "KIE extraction successful using trained model", {"lineCount": len(pred.get("lines", []))})
+                return JSONResponse(pred)
+            except Exception as e:
+                await logger.warning("KIE Model Failed", f"Model inference failed, falling back to heuristic parsing: {str(e)}")
+                # Fallback a stub se l'inferenza fallisce
+                pass
+
+        # Heuristic parsing based on OCR text
+        try:
+            await logger.info("KIE Heuristic", "Using heuristic parsing for KIE extraction")
+            pred = parse_text(req.text or "")
+            await logger.info("KIE Complete", "KIE extraction successful using heuristics", {"lineCount": len(pred.get("lines", []))})
+            return JSONResponse(pred)
+        except Exception as e:
+            await logger.error("KIE Error", f"KIE extraction failed: {str(e)}", e)
+            return JSONResponse(KieResponse(
+                store=KieStore(name=""),
+                datetime="",
+                currency="EUR",
+                lines=[],
+                totals=KieTotals(subtotal=0.0, tax=0.0, total=0.0),
+            ).model_dump())
+    except Exception as e:
+        await logger.error("KIE Endpoint Error", f"Unexpected error in KIE endpoint: {str(e)}", e)
+        raise
 
 
 @app.get("/kie/status")
@@ -176,74 +218,105 @@ import io
 import re
 from datetime import datetime, timezone
 from dateutil import parser as dateparser
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 import pytesseract
+from .preprocessing import preprocess_image
+
+
+def _get_tesseract_params() -> tuple[str, str]:
+    lang = os.getenv("TESSERACT_LANG", "ita+eng").strip() or "ita+eng"
+    def _to_int(name: str, default: int) -> int:
+        try:
+            v = int(os.getenv(name, str(default)))
+            return v
+        except Exception:
+            return default
+    psm = _to_int("TESSERACT_PSM", 6)
+    oem = _to_int("TESSERACT_OEM", 3)
+    cfg = f"--oem {oem} --psm {psm}"
+    return lang, cfg
 
 
 def ocr_text(image_bytes: bytes) -> str:
     try:
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            img = img.convert("L")
-            img = ImageOps.autocontrast(img)
-            img = img.filter(ImageFilter.SHARPEN)
-            # Try OpenCV threshold/denoise if available
-            try:
-                import numpy as np  # type: ignore
-                import cv2  # type: ignore
-                arr = np.array(img)
-                arr = cv2.fastNlMeansDenoising(arr, h=10)
-                thr = cv2.adaptiveThreshold(
-                    arr,
-                    255,
-                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                    cv2.THRESH_BINARY,
-                    31,
-                    10,
-                )
-                img = Image.fromarray(thr)
-            except Exception:
-                pass
+        img = preprocess_image(image_bytes)
+        lang, tess_cfg = _get_tesseract_params()
+        # Prefer structured output to preserve visual row order
+        try:
+            data = pytesseract.image_to_data(
+                img, output_type=pytesseract.Output.DICT, config=tess_cfg, lang=lang
+            )
+            n = len(data.get("text", []))
+            rows: dict[tuple[int, int, int], dict] = {}
+            for i in range(n):
+                txt = (data["text"][i] or "").strip()
+                if not txt:
+                    continue
+                key = (data.get("block_num", [0])[i], data.get("par_num", [0])[i], data.get("line_num", [0])[i])
+                entry = rows.get(key)
+                if entry is None:
+                    entry = {
+                        "top": int(data.get("top", [0])[i] or 0),
+                        "left": int(data.get("left", [0])[i] or 0),
+                        "words": [],
+                    }
+                    rows[key] = entry
+                entry["top"] = min(entry["top"], int(data.get("top", [0])[i] or 0))
+                entry["words"].append((int(data.get("left", [0])[i] or 0), txt))
+            if rows:
+                ordered = sorted(rows.values(), key=lambda r: r["top"])  # top-to-bottom
+                lines_out: list[str] = []
+                for r in ordered:
+                    words = sorted(r["words"], key=lambda w: w[0])  # left-to-right
+                    line = " ".join(w for _, w in words)
+                    line = clean_line(line)
+                    if line:
+                        lines_out.append(line)
+                return "\n".join(lines_out)
+        except Exception:
+            # Fallback to plain text if structured data fails
+            pass
 
-            # Prefer structured output to preserve visual row order
-            try:
-                data = pytesseract.image_to_data(
-                    img, output_type=pytesseract.Output.DICT, config="--oem 3 --psm 6"
-                )
-                n = len(data.get("text", []))
-                rows: dict[tuple[int, int, int], dict] = {}
-                for i in range(n):
-                    txt = (data["text"][i] or "").strip()
-                    if not txt:
-                        continue
-                    key = (data.get("block_num", [0])[i], data.get("par_num", [0])[i], data.get("line_num", [0])[i])
-                    entry = rows.get(key)
-                    if entry is None:
-                        entry = {
-                            "top": int(data.get("top", [0])[i] or 0),
-                            "left": int(data.get("left", [0])[i] or 0),
-                            "words": [],
-                        }
-                        rows[key] = entry
-                    entry["top"] = min(entry["top"], int(data.get("top", [0])[i] or 0))
-                    entry["words"].append((int(data.get("left", [0])[i] or 0), txt))
-                if rows:
-                    ordered = sorted(rows.values(), key=lambda r: r["top"])  # top-to-bottom
-                    lines_out: list[str] = []
-                    for r in ordered:
-                        words = sorted(r["words"], key=lambda w: w[0])  # left-to-right
-                        line = " ".join(w for _, w in words)
-                        line = clean_line(line)
-                        if line:
-                            lines_out.append(line)
-                    return "\n".join(lines_out)
-            except Exception:
-                # Fallback to plain text if structured data fails
-                pass
-
-            text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
-            return text
+        text = pytesseract.image_to_string(img, config=tess_cfg, lang=lang)
+        return text
     except Exception:
         return ""
+
+def ocr_lines(image_bytes: bytes) -> list[dict]:
+    from pytesseract import Output
+    img = preprocess_image(image_bytes)
+    lang, tess_cfg = _get_tesseract_params()
+    data = pytesseract.image_to_data(img, output_type=Output.DICT, config=tess_cfg, lang=lang)
+    n = len(data['text'])
+    groups = {}
+    order = []
+    for i in range(n):
+        txt = (data['text'][i] or '').strip()
+        if not txt:
+            continue
+        key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+        if key not in groups:
+            groups[key] = {
+                'text_parts': [],
+                'x1': 1e9, 'y1': 1e9, 'x2': -1, 'y2': -1
+            }
+            order.append(key)
+        g = groups[key]
+        g['text_parts'].append(txt)
+        x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+        g['x1'] = min(g['x1'], x)
+        g['y1'] = min(g['y1'], y)
+        g['x2'] = max(g['x2'], x + w)
+        g['y2'] = max(g['y2'], y + h)
+    lines: list[dict] = []
+    for key in order:
+        g = groups[key]
+        text = " ".join(g['text_parts']).strip()
+        if not text:
+            continue
+        x1, y1, x2, y2 = g['x1'], g['y1'], g['x2'], g['y2']
+        lines.append({'text': text, 'bbox': {'x': int(x1), 'y': int(y1), 'w': int(x2 - x1), 'h': int(y2 - y1)}})
+    return lines
 
 
 def parse_text(text: str) -> dict:
@@ -271,6 +344,60 @@ def parse_text(text: str) -> dict:
                 "vatRate": float(it["vat"]) if it.get("vat") is not None else None,
                 "weightKg": float(it["weightKg"]) if it.get("weightKg") is not None else None,
                 "pricePerKg": float(it["pricePerKg"]) if it.get("pricePerKg") is not None else None,
+            }
+            for it in items
+        ],
+        "totals": {
+            "subtotal": float(totals.get("subtotal", 0.0)),
+            "tax": float(totals.get("tax", 0.0)),
+            "total": float(totals.get("total", sum(it["total"] for it in items))),
+        },
+    }
+
+def parse_text_with_lines(lines_with_boxes: list[dict]) -> dict:
+    # lines_with_boxes: [{text: str, bbox: {x,y,w,h}}]
+    lines = [clean_line(l['text']) for l in lines_with_boxes]
+    lines = [l for l in lines if l]
+    joined = "\n".join(lines)
+
+    store_name = infer_store(lines)
+    address, city, cap = infer_address_city_cap(lines)
+    vat = infer_vat(lines)
+    dt_iso = infer_datetime(lines) or datetime.now(timezone.utc).isoformat()
+    currency = infer_currency(joined)
+    items = infer_items(lines)
+    totals = infer_totals(lines, items)
+
+    # Map line index -> bbox
+    idx_to_bbox = {idx: lb['bbox'] for idx, lb in enumerate(lines_with_boxes) if (clean_line(lb['text']) or None)}
+    # Try find store line index
+    try:
+        store_idx = lines.index(store_name) if store_name else 0
+    except ValueError:
+        store_idx = 0
+    store_bbox = idx_to_bbox.get(store_idx)
+
+    return {
+        "store": {"name": store_name or "", "address": address, "city": city, "postalCode": cap, "vatNumber": vat},
+        "storeOcrX": (store_bbox or {}).get('x'),
+        "storeOcrY": (store_bbox or {}).get('y'),
+        "storeOcrW": (store_bbox or {}).get('w'),
+        "storeOcrH": (store_bbox or {}).get('h'),
+        "datetime": dt_iso,
+        "currency": currency or "EUR",
+        "lines": [
+            {
+                "labelRaw": it["label"],
+                "qty": float(it["qty"]),
+                "unitPrice": float(it["unit"]),
+                "lineTotal": float(it["total"]),
+                "vatRate": float(it["vat"]) if it.get("vat") is not None else None,
+                "weightKg": float(it["weightKg"]) if it.get("weightKg") is not None else None,
+                "pricePerKg": float(it["pricePerKg"]) if it.get("pricePerKg") is not None else None,
+                "ocrX": idx_to_bbox.get(it.get("_index"), {}).get('x'),
+                "ocrY": idx_to_bbox.get(it.get("_index"), {}).get('y'),
+                "ocrW": idx_to_bbox.get(it.get("_index"), {}).get('w'),
+                "ocrH": idx_to_bbox.get(it.get("_index"), {}).get('h'),
             }
             for it in items
         ],

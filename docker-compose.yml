@@ -1,3 +1,5 @@
+name: warp-refactor
+
 services:
   api:
     build:
@@ -17,11 +19,20 @@ services:
       Auth__Key: dev-secret-change-me-please-32-bytes-min
       Auth__Issuer: wib
       Auth__Audience: wib-clients
+      Logging__StreamKey: app_logs
+      Logging__MinLevel: Verbose
     restart: unless-stopped
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
   worker:
     build:
       context: .
@@ -36,9 +47,15 @@ services:
       Ocr__Endpoint: http://ocr:8081
       Kie__Endpoint: http://ocr:8081
       Ml__Endpoint: http://ml:8082
+      Logging__StreamKey: app_logs
+      Logging__MinLevel: Verbose
     depends_on:
-      - db
-      - api
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_started
   db:
     image: postgres:16-alpine
     environment:
@@ -47,6 +64,8 @@ services:
       POSTGRES_PASSWORD: wib
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "9998:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wib"]
       interval: 5s
@@ -76,6 +95,9 @@ services:
       # PP_STRUCTURE_SER_CFG: /app/kie_models/ser_infer.yml
       # PP_STRUCTURE_RE_CFG: /app/kie_models/re_infer.yml
       # DONUT_CHECKPOINT: /app/kie_models/donut.ckpt
+      REDIS_URL: redis://redis:6379
+      LOG_STREAM_KEY: app_logs
+      LOG_LEVEL: Verbose
     volumes:
       - ./.data/kie:/app/kie_models:ro
     ports:
@@ -89,6 +111,9 @@ services:
     environment:
       MODEL_DIR: /app/models
       TOP_K: "3"
+      REDIS_URL: redis://redis:6379
+      LOG_STREAM_KEY: app_logs
+      LOG_LEVEL: Verbose
     volumes:
       - ./.data/models:/app/models
   qdrant:
@@ -107,27 +132,27 @@ services:
       - "8085:80"
 
   # --- Strumenti di annotazione (opzionali) ---
-  labelstudio:
-    image: heartexlabs/label-studio:latest
-    environment:
-      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
-      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /data
-    ports:
-      - "8088:8080"   # UI Label Studio
-    volumes:
-      - ./.data/labelstudio:/label-studio/data
-      - ./.data/images:/data:ro  # immagini locali da annotare (solo lettura)
+  # labelstudio:
+  #   image: heartexlabs/label-studio:latest
+  #   environment:
+  #     LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+  #     LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /data
+  #   ports:
+  #     - "8088:8080"   # UI Label Studio
+  #   volumes:
+  #     - ./.data/labelstudio:/label-studio/data
+  #     - ./.data/images:/data:ro  # immagini locali da annotare (solo lettura)
 
-  doccano:
-    image: doccano/doccano:latest
-    environment:
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin
-      ADMIN_EMAIL: admin@example.com
-    ports:
-      - "8089:8000"   # UI Doccano
-    volumes:
-      - ./.data/doccano:/data
+  # doccano:
+  #   image: doccano/doccano:latest
+  #   environment:
+  #     ADMIN_USERNAME: admin
+  #     ADMIN_PASSWORD: admin
+  #     ADMIN_EMAIL: admin@example.com
+  #   ports:
+  #     - "8089:8000"   # UI Doccano
+  #   volumes:
+  #     - ./.data/doccano:/data
   web-devices:
     build:
       context: .

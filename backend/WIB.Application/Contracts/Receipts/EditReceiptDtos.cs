@@ -13,6 +13,8 @@ public class EditReceiptRequest
     public string? Currency { get; set; }
     public List<EditReceiptLine> Lines { get; set; } = new();
     public List<NewReceiptLine> AddLines { get; set; } = new();
+    // Optional: reordering of existing lines by their original indices (after any removals applied client-side)
+    public List<int>? Order { get; set; }
 }
 
 public class EditReceiptLine
@@ -24,6 +26,8 @@ public class EditReceiptLine
     public decimal? UnitPrice { get; set; }
     public decimal? LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public Guid? FinalTypeId { get; set; }
+    public string? FinalTypeName { get; set; }
     public Guid? FinalCategoryId { get; set; }
     public string? FinalCategoryName { get; set; }
     public string? ProductName { get; set; }
@@ -38,6 +42,8 @@ public class NewReceiptLine
     public decimal UnitPrice { get; set; }
     public decimal LineTotal { get; set; }
     public decimal? VatRate { get; set; }
+    public Guid? FinalTypeId { get; set; }
+    public string? FinalTypeName { get; set; }
     public Guid? FinalCategoryId { get; set; }
     public string? FinalCategoryName { get; set; }
     public string? ProductName { get; set; }

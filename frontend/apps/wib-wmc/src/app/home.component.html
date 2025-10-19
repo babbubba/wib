@@ -3,6 +3,12 @@
   <div class="list-group">
     <a routerLink="/dashboard" class="list-group-item list-group-item-action">Dashboard WMC</a>
     <a routerLink="/queue" class="list-group-item list-group-item-action">Coda Elaborazione</a>
+    <a routerLink="/monitoring" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+      <span>Monitoring & Logs</span>
+      <span *ngIf="errorCount > 0" class="badge bg-danger rounded-pill">
+        {{ errorCount }} errori
+      </span>
+    </a>
     <a href="http://localhost:4200" target="_blank" rel="noopener" class="list-group-item list-group-item-action">Devices (Upload)</a>
     <a href="http://localhost:8080/swagger" target="_blank" rel="noopener" class="list-group-item list-group-item-action">Swagger API</a>
     <a href="http://localhost:8085" target="_blank" rel="noopener" class="list-group-item list-group-item-action">Proxy</a>

@@ -19,6 +19,10 @@ public class WibDbContext : DbContext
     public DbSet<BudgetMonth> BudgetMonths => Set<BudgetMonth>();
     public DbSet<ExpenseAggregate> ExpenseAggregates => Set<ExpenseAggregate>();
     public DbSet<LabelingEvent> LabelingEvents => Set<LabelingEvent>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +46,11 @@ public class WibDbContext : DbContext
             .HasOne(a => a.Product)
             .WithMany(p => p.Aliases)
             .HasForeignKey(a => a.ProductId);
+
+        modelBuilder.Entity<Receipt>()
+            .HasOne(r => r.User)
+            .WithMany(u => u.Receipts)
+            .HasForeignKey(r => r.UserId);
 
         modelBuilder.Entity<Receipt>()
             .HasOne(r => r.Store)
@@ -78,6 +87,36 @@ public class WibDbContext : DbContext
             .WithMany(s => s.Locations)
             .HasForeignKey(sl => sl.StoreId);
 
+        modelBuilder.Entity<RefreshToken>()
+            .HasOne(rt => rt.User)
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(rt => rt.UserId);
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.User)
+            .WithMany(u => u.UserRoles)
+            .HasForeignKey(ur => ur.UserId);
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.Role)
+            .WithMany(r => r.UserRoles)
+            .HasForeignKey(ur => ur.RoleId);
+
+        // User username unique index
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Username)
+            .IsUnique();
+
+        // User email unique index
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Email)
+            .IsUnique();
+
+        // Role name unique index
+        modelBuilder.Entity<Role>()
+            .HasIndex(r => r.Name)
+            .IsUnique();
+
         // Precision for monetary/quantities
         modelBuilder.Entity<ReceiptLine>().Property(p => p.Qty).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.UnitPrice).HasPrecision(10, 3);
@@ -85,6 +124,7 @@ public class WibDbContext : DbContext
         modelBuilder.Entity<ReceiptLine>().Property(p => p.VatRate).HasPrecision(5, 2);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.WeightKg).HasPrecision(10, 3);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.PricePerKg).HasPrecision(10, 3);
+        modelBuilder.Entity<ReceiptLine>().Property(p => p.SortIndex).HasDefaultValue(0);
         modelBuilder.Entity<ReceiptLine>().Property(p => p.PredictionConfidence).HasPrecision(3, 2);
         modelBuilder.Entity<Receipt>().Property(p => p.Total).HasPrecision(10, 3);
         modelBuilder.Entity<Receipt>().Property(p => p.TaxTotal).HasPrecision(10, 3);

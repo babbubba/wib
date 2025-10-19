@@ -6,8 +6,12 @@ using WIB.Worker;
 using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
+using WIB.Infrastructure.Services;
+using WIB.Infrastructure.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
+// Add memory cache for EnhancedNameMatcher
+builder.Services.AddMemoryCache();
 // Endpoints (support both section keys and env fallbacks)
 var ocrEndpoint = builder.Configuration["Ocr:Endpoint"]
                    ?? Environment.GetEnvironmentVariable("Ocr__Endpoint")
@@ -22,6 +26,8 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
                   ?? "http://localhost:8082";
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
+builder.Services.AddScoped<INameMatcher, EnhancedNameMatcher>();
+builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 builder.Services.AddScoped<ReceiptProcessor>();
 builder.Services.AddHostedService<Worker>();
@@ -43,55 +49,45 @@ var redisConn = builder.Configuration["Redis:Connection"]
                  ?? "redis:6379";
 builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisConn));
 
+// Redis logger for centralized monitoring
+var logStreamKey = builder.Configuration["Logging:StreamKey"]
+                    ?? Environment.GetEnvironmentVariable("Logging__StreamKey")
+                    ?? "app_logs";
+var logLevel = Enum.TryParse<LogSeverity>(
+    builder.Configuration["Logging:MinLevel"] ?? Environment.GetEnvironmentVariable("Logging__MinLevel"),
+    ignoreCase: true,
+    out var parsedLevel) ? parsedLevel : LogSeverity.Info;
+builder.Services.AddSingleton<IRedisLogger>(sp =>
+    new RedisLogger(redisConn, "worker", logStreamKey, maxStreamLength: 10000, minLogLevel: logLevel));
+
 var host = builder.Build();
 
-// Auto-migrate DB on startup (dev/local) con retry per dipendenze lente (DB)
+// Verify DB connection is available (API handles migrations)
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<WibDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrap");
-    const int maxAttempts = 30;
+    
+    const int maxAttempts = 10;
+    
     for (var attempt = 1; attempt <= maxAttempts; attempt++)
     {
         try
         {
-            db.Database.Migrate();
-            try
-            {
-                db.Database.ExecuteSqlRaw(@"DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'WeightKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""WeightKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'PriceHistories' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-END $$;");
-            }
-            catch { /* best-effort */ }
-            logger.LogInformation("Database migration successful");
+            logger.LogInformation("Verifying database connection (attempt {Attempt}/{MaxAttempts})", attempt, maxAttempts);
+            await db.Database.CanConnectAsync();
+            logger.LogInformation("Database connection verified successfully");
             break;
         }
         catch (Exception ex)
         {
             if (attempt == maxAttempts)
             {
-                logger.LogError(ex, "Database migration failed after {Attempts} attempts", maxAttempts);
+                logger.LogError(ex, "Database connection verification failed after {MaxAttempts} attempts", maxAttempts);
                 throw;
             }
-            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{Max}). Retrying...", attempt, maxAttempts);
+            
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}/{MaxAttempts}). Retrying in 2 seconds...", attempt, maxAttempts);
             await Task.Delay(2000);
         }
     }

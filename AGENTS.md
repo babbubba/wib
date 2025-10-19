@@ -1,40 +1,83 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `backend/` (.NET 8): `WIB.API` (REST), `WIB.Worker` (background), libraries under `WIB.*`, tests in `backend/WIB.Tests`, solution `backend/WIB.sln`.
-- `frontend/` (Angular 19): apps `wib-devices` and `wib-wmc` under `frontend/apps/*/src`. Config in `frontend/angular.json`, scripts in `frontend/package.json`.
-- `services/` (Python FastAPI): `ocr/` and `ml/` with `main.py`, `Dockerfile`, `requirements.txt`, tests in `services/*/tests`.
-- `proxy/` (nginx), `docker-compose.yml` (local stack), `scripts/` (helpers), `docs/` (data/tools).
+- Backend (.NET): `backend/` with solution `backend/WIB.sln`.
+  - API: `backend/WIB.API`, Worker: `backend/WIB.Worker`, Domain/Application/Infrastructure libs, tests in `backend/WIB.Tests`.
+- Frontend (Angular): `frontend/` with apps `apps/wib-wmc` and `apps/wib-devices`.
+- Python services: `services/ml`, `services/ocr` (+ shared utils in `services/shared`).
+- Orchestration & config: `docker-compose.yml`, `proxy/`, `docker/`, `docs/`, `scripts/`.
 
 ## Build, Test, and Development Commands
-- Full stack (Docker): `docker compose up -d --build` then visit proxy `http://localhost:8085`.
-- Backend (.NET): `dotnet build backend/WIB.sln`, `dotnet test backend/WIB.Tests/WIB.Tests.csproj`, run API `dotnet run --project backend/WIB.API`, run worker `dotnet run --project backend/WIB.Worker`.
-- Frontend (Angular): `npm install --prefix frontend`; dev servers `npm run start:devices --prefix frontend` (4200) and `npm run start:wmc --prefix frontend` (4201); builds `npm run build:devices|build:wmc`.
-- Python services: `python -m pip install -r services/ocr/requirements.txt` (and for `ml`); tests `python -m pytest services\ocr\tests services\ml\tests` (PowerShell). If needed: `set PYTHONPATH=.` (cmd) or `$env:PYTHONPATH='.'` (PowerShell).
-- E2E smoke (Windows): `.\scripts\e2e.ps1`.
+- Backend (.NET 9 per `global.json`):
+  - Restore/build/test: `dotnet restore && dotnet build backend/WIB.sln -c Debug && dotnet test backend/WIB.sln`
+  - Run API/Worker: `dotnet run --project backend/WIB.API` / `dotnet run --project backend/WIB.Worker`
+- Frontend (Node 20 per `frontend/package.json`):
+  - Install: `cd frontend && npm ci`
+  - Dev servers: `npm run start:wmc` (4201) or `npm run start:devices` (4200)
+  - Build/tests: `npm run build:wmc` / `npm run test:wmc`
+- Python services:
+  - ML: `pip install -r services/ml/requirements.txt && pytest services/ml/tests -q`
+  - OCR: `pip install -r services/ocr/requirements.txt && pytest services/ocr/tests -q`
+- Full stack (Docker): `docker compose up --build`
+
+## Ambiente & Proxy
+- Entrypoint locale: `http://localhost:8085` (nginx) che inoltra a API(8080), OCR(8081), ML(8082).
+- Angular DEV usa `frontend/proxy.conf.json`: mantieni `/api` → `http://localhost:8080` con `pathRewrite` `^/api`→``; aggiungi anche `/auth` e `/ml` → `http://localhost:8080` per login e suggerimenti ML.
+- Evita churn sui prefissi: le API espongono rotte “flat” (es. `/receipts`, `/analytics`, `/auth`); se necessario supporta sia `/auth/*` che `/api/auth/*` per compatibilità DEV.
+
+## Autenticazione & Ruoli
+- Ruoli principali: `device` (upload scontrini) e `wmc` (monitoring, analytics, review/edit).
+- Endpoint auth disponibili su `/auth/*`; configura env: `Auth__Key`, `Auth__Issuer`, `Auth__Audience` (vedi `docker-compose.yml`).
+- Quando aggiungi nuove rotte .NET, rispetta gli `[Authorize(Roles=…)]` già in uso e mantieni i due route-templates se richiesto dalla UX DEV.
+
+## Migrazioni & Database
+- EF Core: aggiungi migrazioni da `WIB.Infrastructure` usando l’API come startup project:
+  - `dotnet ef migrations add <Name> -s backend/WIB.API -p backend/WIB.Infrastructure`
+  - `dotnet ef database update -s backend/WIB.API -p backend/WIB.Infrastructure`
+- Target `net8.0`, SDK bloccato via `global.json` (9.x): non modificare senza coordinamento.
+
+## Porte & Log
+- Porte: API 8080, Proxy 8085, OCR 8081, ML 8082, MinIO 9000/9001, Postgres 9998 (host), Qdrant 6333.
+- Monitoring centralizzato: Redis Streams chiave `app_logs` (vedi `docs/MONITORING.md`).
+- Verifica rapida: `docker compose logs -f api worker ml ocr` e `GET /health/ready` sull’API.
 
 ## Coding Style & Naming Conventions
-- C#: 4-space indent; PascalCase for types/methods, camelCase for locals/fields; one class per file within `WIB.*` namespaces.
-- TypeScript/Angular: 2-space indent; files follow `*.component.ts|html|css`; prefer template/style URLs over inline.
-- Python: PEP 8 (4 spaces), type hints where practical; modules under `services/*` with `test_*.py` naming.
+- C#: 4 spaces; PascalCase types/methods, camelCase locals/fields; suffix async methods with `Async`; prefer DI and nullability.
+- TypeScript/Angular: 2 spaces; kebab-case file names; components `*.component.ts`; suffix observables with `$`.
+- Python: PEP 8 (4 spaces), snake_case, type hints where practical.
 
 ## Testing Guidelines
-- Backend: xUnit (`backend/WIB.Tests/*Tests.cs`). Coverage: `dotnet test /p:CollectCoverage=true` (coverlet). Add tests for new handlers/controllers.
-- Frontend: Jasmine/Karma; keep `*.spec.ts` near components; run `npm run test:devices|test:wmc --prefix frontend` (headless).
-- Python: pytest; place tests under `services/*/tests` and name `test_*.py`.
+- Backend: xUnit-style tests in `backend/WIB.Tests/*Tests.cs`; follow Arrange–Act–Assert.
+- Frontend: Jasmine/Karma via `npm run test:wmc` or `test:devices`.
+- Python: Pytest with `test_*.py` in each service’s `tests/`.
+- Aim to keep or improve coverage; add tests for new logic.
 
 ## Commit & Pull Request Guidelines
-- Commits: imperative, concise. Conventional Commits encouraged: `feat(api): add KIE status endpoint`, `fix(ocr): handle empty uploads`.
-- PRs: include problem/solution summary, linked issues, test/run steps, screenshots for UI changes, and notes on config/env vars touched.
+- Commits: prefer Conventional Commits (e.g., `feat(api): …`, `fix(ocr): …`); imperative, concise subject; meaningful body when needed.
+- PRs: include a clear description, linked issues, test plan, and screenshots for UI changes. Keep diffs focused; update docs when behavior or endpoints change.
+
+## Gestione Issue GitHub (gh CLI)
+- Usa GitHub CLI `gh` (già autenticata; non serve token) quando richiesto di lavorare su un’issue.
+- Flusso tipico:
+  - Leggi l’issue: `gh issue view <numero>` oppure lista: `gh issue list --label bug`.
+  - Crea/checkout branch: `gh issue checkout <numero>` (crea branch `issue-<num>`).
+  - Implementa seguendo il processo: test → nuovi test → docs → build immagini → verifica log.
+  - Commit: `git commit -m "fix(<area>): descrizione breve (fixes #<num>)"`.
+  - PR: `gh pr create --fill --draft` (aggiungi dettagli e collegamenti); apri: `gh pr view --web`.
+  - Merge quando pronto: `gh pr merge --squash --delete-branch` e chiudi issue: `gh issue close <numero> -c "Risolta in #<pr>"`.
+  - Verifica repo corrente: `gh repo view` (imposta default se necessario).
 
 ## Security & Configuration Tips
-- Use env vars (double-underscore) for nested settings (see `docker-compose.yml`): `ConnectionStrings__Default`, `Ocr__Endpoint`, `Ml__Endpoint`, `Auth__Key`.
-- Do not commit secrets; mount models/data under `.data/`. Default ports: API 8080, OCR 8081, ML 8082, Proxy 8085.
-- Windows/PowerShell workflow and tips: see `agent.md`.
+- Do not commit secrets; use env vars (`appsettings*.json` for .NET, service env for Docker). Update `docker-compose.yml` only with non-sensitive defaults.
 
-## Direttive Windows 11 (PowerShell)
-- Usa solo PowerShell su Windows 11: non usare sintassi Bash (`export`, `&&`, `VAR=cmd`).
-- Variabili d'ambiente: imposta con `$env:KEY = 'value'` nella stessa sessione.
-- Docker gira in locale: esegui comandi e leggi i log direttamente (`docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`).
-- Avvio lento con i rebuild: preferisci rebuild selettivi e restart (`docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`); usa `--no-cache` solo se necessario.
-- HTTP client: usa `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl` di PowerShell).
+## Istruzioni Specifiche per l’Agente
+- Ruolo: full‑stack developer (.NET, Angular, Python) con competenze OCR avanzate, networking in ambienti virtuali/containerizzati, Docker e Windows 11 con PowerShell 5.1.
+- Processo per ogni step di implementazione:
+  1) Esegui tutti i test esistenti: `dotnet test backend/WIB.sln`, `cd frontend && npm run test:wmc && npm run test:devices`, `pytest services/ml/tests -q && pytest services/ocr/tests -q`.
+  2) Aggiungi/aggiorna test per le nuove funzionalità se mancanti.
+  3) Aggiorna la documentazione se necessario: modifica `README.md` (in italiano) con descrizioni dettagliate dei cambiamenti e, se utile, esempi d’uso (comandi, endpoint, snippet). Integra anche `docs/` quando opportuno.
+  4) Rebuild solo le immagini toccate: `docker compose build api worker ml ocr` (se rilevanti) e `docker compose up -d`.
+  5) Verifica i log per 2–5 minuti senza bloccare il lavoro: `docker compose logs -f --tail=200 api worker ocr ml` e interrompi quando sufficiente.
+- Comandi di riferimento (Docker/PS 5.1):
+  - Docker: `docker compose ps`, `… build <svc>`, `… up -d`, `… logs -f <svc>`, `docker exec -it <container> sh`, `docker inspect <container>`, `docker system df`.
+  - Networking/Windows: `Test-NetConnection <host> -Port <p>`, `Invoke-WebRequest http://localhost:8080/health/ready -UseBasicParsing`.

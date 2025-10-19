@@ -5,4 +5,5 @@ namespace WIB.Application.Interfaces;
 public interface IKieClient
 {
     Task<ReceiptDraft> ExtractFieldsAsync(string ocrResult, CancellationToken ct);
+    Task<ReceiptDraft> ExtractFieldsAsync(string ocrResult, byte[]? imageBytes, CancellationToken ct);
 }

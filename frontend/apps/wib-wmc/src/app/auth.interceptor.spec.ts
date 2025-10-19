@@ -14,7 +14,7 @@ describe('authInterceptor', () => {
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
-        { provide: AuthService, useValue: { getToken: () => 'test-token', logoutAndRedirect: () => {} } },
+        { provide: AuthService, useValue: { getToken: () => 'test-token', isTokenExpired: () => false, logoutAndRedirect: () => {} } },
       ],
     });
     http = TestBed.inject(HttpClient);
@@ -30,4 +30,3 @@ describe('authInterceptor', () => {
     req.flush([]);
   });
 });
-

@@ -29,6 +29,7 @@ RUN sed -n '1,200p' /app/services/ocr/requirements.txt >/dev/null 2>&1 || true \
     && pip install --no-index --find-links=/wheels -r /app/services/ocr/requirements.txt
 
 # Copy source
+COPY services/shared /app/services/shared
 COPY services/ocr /app/services/ocr
 
 EXPOSE 8081

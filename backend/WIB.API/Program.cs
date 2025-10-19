@@ -3,23 +3,28 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
+using System.Threading.Tasks;
 using WIB.Application.Interfaces;
 using WIB.Application.Receipts;
 using WIB.Infrastructure.Clients;
 using WIB.Infrastructure.Data;
 using WIB.Infrastructure.Storage;
 using WIB.Infrastructure.Queue;
+using WIB.Infrastructure.Services;
+using WIB.Infrastructure.Logging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using Microsoft.AspNetCore.Authorization;
-using WIB.API.Auth;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add memory cache for EnhancedNameMatcher
+builder.Services.AddMemoryCache();
 
 var ocrEndpoint = builder.Configuration["Ocr:Endpoint"]
                    ?? Environment.GetEnvironmentVariable("Ocr__Endpoint")
@@ -34,12 +39,21 @@ var mlEndpoint = builder.Configuration["Ml:Endpoint"]
                   ?? "http://localhost:8082";
 builder.Services.AddHttpClient<IProductClassifier, ProductClassifier>(client => client.BaseAddress = new Uri(mlEndpoint));
 builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
+builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.EnhancedNameMatcher>();
+builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
 
-var conn = builder.Configuration.GetConnectionString("Default") ??
-           Environment.GetEnvironmentVariable("ConnectionStrings__Default") ??
-           "Host=localhost;Database=wib;Username=wib;Password=wib";
-builder.Services.AddDbContext<WibDbContext>(options => options.UseNpgsql(conn));
+// Authentication services
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<DatabaseSeedService>();
+
+// Database configuration
+var connectionString = builder.Configuration.GetConnectionString("Default")
+                      ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+                      ?? "Host=localhost;Database=wib;Username=wib;Password=wib";
+
+builder.Services.AddDbContext<WibDbContext>(options => options.UseNpgsql(connectionString));
 
 // MinIO options and storage
 builder.Services.Configure<MinioOptions>(builder.Configuration.GetSection("Minio"));
@@ -52,6 +66,20 @@ var redisConn = builder.Configuration["Redis:Connection"]
                 ?? "redis:6379";
 builder.Services.AddSingleton<IReceiptQueue>(_ => new RedisReceiptQueue(redisConn));
 
+// Redis logger for centralized monitoring
+var logStreamKey = builder.Configuration["Logging:StreamKey"]
+                    ?? Environment.GetEnvironmentVariable("Logging__StreamKey")
+                    ?? "app_logs";
+var logLevel = Enum.TryParse<LogSeverity>(
+    builder.Configuration["Logging:MinLevel"] ?? Environment.GetEnvironmentVariable("Logging__MinLevel"),
+    ignoreCase: true,
+    out var parsedLevel) ? parsedLevel : LogSeverity.Info;
+builder.Services.AddSingleton<IRedisLogger>(sp =>
+    new RedisLogger(redisConn, "api", logStreamKey, maxStreamLength: 10000, minLogLevel: logLevel));
+
+// Redis log consumer for monitoring endpoints
+builder.Services.AddSingleton(sp => new RedisLogConsumer(redisConn, logStreamKey));
+
 // Health checks
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<WibDbContext>(name: "db");
@@ -59,7 +87,8 @@ builder.Services.AddHealthChecks()
 // Form limits (max 10 MB upload)
 builder.Services.Configure<FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 10 * 1024 * 1024;
+    // Consenti upload fino a 20 MB
+    o.MultipartBodyLengthLimit = 20 * 1024 * 1024;
 });
 
 // Rate limiting (fixed window, 30 req / 10s per IP)
@@ -79,53 +108,60 @@ builder.Services.AddRateLimiter(_ =>
     _.RejectionStatusCode = 429;
 });
 
-// Auth (JWT)
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
-var authOpts = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
-// Ensure defaults are available to both JWT setup and injected options
-if (authOpts.Users == null || authOpts.Users.Count == 0)
-{
-    authOpts.Users = new List<AuthUser> {
-        new() { Username = "admin", Password = "admin", Role = "wmc" },
-        new() { Username = "device", Password = "device", Role = "devices" }
-    };
-}
-if (string.IsNullOrWhiteSpace(authOpts.Key)) authOpts.Key = new AuthOptions().Key;
-if (string.IsNullOrWhiteSpace(authOpts.Issuer)) authOpts.Issuer = new AuthOptions().Issuer;
-if (string.IsNullOrWhiteSpace(authOpts.Audience)) authOpts.Audience = new AuthOptions().Audience;
-builder.Services.PostConfigure<AuthOptions>(opts =>
-{
-    if (opts.Users == null || opts.Users.Count == 0)
-    {
-        opts.Users = new List<AuthUser> {
-            new() { Username = "admin", Password = "admin", Role = "wmc" },
-            new() { Username = "device", Password = "device", Role = "devices" }
-        };
-    }
-    if (string.IsNullOrWhiteSpace(opts.Key)) opts.Key = authOpts.Key;
-    if (string.IsNullOrWhiteSpace(opts.Issuer)) opts.Issuer = authOpts.Issuer;
-    if (string.IsNullOrWhiteSpace(opts.Audience)) opts.Audience = authOpts.Audience;
-});
-var keyBytes = Encoding.UTF8.GetBytes(authOpts.Key);
+// JWT Authentication Configuration
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtSecret = jwtSection["Secret"] ?? 
+    Environment.GetEnvironmentVariable("JWT_SECRET") ?? 
+    "your-super-secret-jwt-signing-key-that-should-be-at-least-32-characters-long";
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ValidateIssuer = true,
-            ValidIssuer = authOpts.Issuer,
+            ValidIssuer = jwtSection["Issuer"] ?? "WIB.API",
             ValidateAudience = true,
-            ValidAudience = authOpts.Audience,
-            ValidateLifetime = true
+            ValidAudience = jwtSection["Audience"] ?? "WIB.Client",
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(5)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    var httpContext = context.HttpContext;
+                    var requestPath = httpContext.Request.Path;
+
+                    if (requestPath.StartsWithSegments("/monitoring/logs/stream"))
+                    {
+                        if (httpContext.Request.Cookies.TryGetValue("wib_access_token", out var cookieToken) &&
+                            !string.IsNullOrWhiteSpace(cookieToken))
+                        {
+                            context.Token = cookieToken;
+                        }
+                        else if (httpContext.Request.Query.TryGetValue("access_token", out var tokenValues))
+                        {
+                            var queryToken = tokenValues.ToString();
+                            if (!string.IsNullOrWhiteSpace(queryToken))
+                            {
+                                context.Token = queryToken;
+                            }
+                        }
+                    }
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("wmc", p => p.RequireRole("wmc"));
-    options.AddPolicy("devices", p => p.RequireRole("devices"));
-});
+
+builder.Services.AddAuthorization();
 var app = builder.Build();
 
 var swaggerEnabled = app.Environment.IsDevelopment()
@@ -150,49 +186,41 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Auto-migrate DB on startup (dev/local)
+// Auto-migrate DB on startup with retry logic
 using (var scope = app.Services.CreateScope())
 {
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<WibDbContext>();
+    
     var attempts = 0;
     var maxAttempts = 10;
-    while (true)
+    
+    while (attempts < maxAttempts)
     {
         try
         {
+            logger.LogInformation("Attempting database migration (attempt {Attempt}/{MaxAttempts})", attempts + 1, maxAttempts);
             db.Database.Migrate();
-            // Ensure new columns exist when migrations assembly is out of sync
-            try
-            {
-                db.Database.ExecuteSqlRaw(@"DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'WeightKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""WeightKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'ReceiptLines' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""ReceiptLines"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'PriceHistories' AND column_name = 'PricePerKg'
-    ) THEN
-        ALTER TABLE ""PriceHistories"" ADD COLUMN ""PricePerKg"" numeric(10,3) NULL;
-    END IF;
-END $$;");
-            }
-            catch { /* best-effort */ }
+            logger.LogInformation("Database migration successful");
+            
+            // Seed default data
+            var seedService = scope.ServiceProvider.GetRequiredService<DatabaseSeedService>();
+            await seedService.SeedDefaultDataAsync();
+            logger.LogInformation("Database seeding completed");
+            
             break;
         }
-        catch
+        catch (Exception ex)
         {
-            if (++attempts >= maxAttempts) throw;
-            System.Threading.Thread.Sleep(2000);
+            attempts++;
+            if (attempts >= maxAttempts)
+            {
+                logger.LogError(ex, "Database migration failed after {MaxAttempts} attempts", maxAttempts);
+                throw;
+            }
+            
+            logger.LogWarning(ex, "Database migration attempt {Attempt} failed, retrying in 2 seconds", attempts);
+            await Task.Delay(2000);
         }
     }
 }

@@ -28,7 +28,24 @@ public class QueueController : ControllerBase
         if (take <= 0 || take > 100) take = 20;
         var len = await _queue.GetLengthAsync(ct);
         var list = await _queue.PeekAsync(take, ct);
-        return Ok(new QueueStatusDto(len, list.ToList()));
+
+        // Hide items that are already processed (present in Receipts.ImageObjectKey)
+        // to avoid showing the same image as both "in coda" and "già processata" in WMC.
+        var objectKeys = list.Select(item => item.ObjectKey).ToList();
+        if (objectKeys.Count > 0)
+        {
+            var used = await _db.Receipts.AsNoTracking()
+                .Where(r => r.ImageObjectKey != null && objectKeys.Contains(r.ImageObjectKey!))
+                .Select(r => r.ImageObjectKey!)
+                .ToListAsync(ct);
+            if (used.Count > 0)
+            {
+                var usedSet = used.ToHashSet();
+                objectKeys = objectKeys.Where(k => !usedSet.Contains(k)).ToList();
+            }
+        }
+
+        return Ok(new QueueStatusDto(len, objectKeys));
     }
 
     [HttpPost("reprocess")]
@@ -42,8 +59,7 @@ public class QueueController : ControllerBase
             objectKey = rec.ImageObjectKey;
         }
         if (string.IsNullOrWhiteSpace(objectKey)) return BadRequest("Missing objectKey or receiptId");
-        await _queue.EnqueueAsync(objectKey!, ct);
+        await _queue.EnqueueAsync(new ReceiptQueueItem(objectKey!, Guid.Empty), ct);
         return Accepted(new { objectKey });
     }
 }
-

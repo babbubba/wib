@@ -1,0 +1,40 @@
+<div class="service-status-container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">Stato Servizi</h4>
+    <button class="btn btn-sm btn-outline-primary" (click)="refreshNow()" [disabled]="loading">
+      <span *ngIf="loading" class="spinner-border spinner-border-sm me-1"></span>
+      Aggiorna
+    </button>
+  </div>
+
+  <div *ngIf="error" class="alert alert-danger">
+    {{ error }}
+  </div>
+
+  <div class="row g-3">
+    <div *ngFor="let service of services" class="col-md-6 col-lg-3">
+      <div class="card service-card" [ngClass]="getStatusClass(service.status)">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="card-title mb-0">{{ service.name }}</h5>
+            <span class="badge status-badge">{{ getStatusText(service.status) }}</span>
+          </div>
+          <div class="service-info">
+            <div class="info-item">
+              <small class="text-muted">Uptime:</small>
+              <span>{{ service.uptime || 'N/A' }}</span>
+            </div>
+            <div class="info-item">
+              <small class="text-muted">Ultimo check:</small>
+              <span>{{ service.lastCheck | date:'HH:mm:ss' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="!loading && services.length === 0" class="text-center text-muted py-4">
+    Nessun servizio disponibile
+  </div>
+</div>

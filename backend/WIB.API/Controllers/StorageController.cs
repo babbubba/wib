@@ -146,7 +146,7 @@ public class StorageController : ControllerBase
         int enq = 0;
         foreach (var k in req.ObjectKeys.Where(k => !string.IsNullOrWhiteSpace(k)))
         {
-            await _queue.EnqueueAsync(k, ct);
+            await _queue.EnqueueAsync(new ReceiptQueueItem(k, Guid.Empty), ct);
             enq++;
         }
         return Accepted(new { enqueued = enq });

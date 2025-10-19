@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install --no-index --find-lin
     joblib==1.4.2
 
 # Copy source
+COPY services/shared /app/services/shared
 COPY services/ml /app/services/ml
 
 ENV MODEL_DIR=/app/models

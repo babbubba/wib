@@ -13,7 +13,7 @@ public class ProductClassifier : IProductClassifier
         _http = http;
     }
 
-    public async Task<(Guid? TypeId, Guid? CategoryId, float Confidence)> PredictAsync(string labelRaw, CancellationToken ct)
+    public async Task<MlPredictionResult> PredictAsync(string labelRaw, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync("/predict", new { labelRaw }, ct);
         resp.EnsureSuccessStatusCode();
@@ -27,7 +27,12 @@ public class ProductClassifier : IProductClassifier
             var c = sugg.CategoryCandidates.FirstOrDefault()?.Conf ?? 0f;
             conf = Math.Max(t, c);
         }
-        return (typeId, catId, conf);
+        return new MlPredictionResult
+        {
+            TypeId = typeId,
+            CategoryId = catId,
+            Confidence = conf
+        };
     }
 
     public async Task FeedbackAsync(string labelRaw, string? brand, Guid typeId, Guid? categoryId, CancellationToken ct)

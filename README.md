@@ -2,16 +2,53 @@
 
 ## Avvio Rapido
 
-- Requisiti: Docker Desktop attivo (Linux containers), Node 20.x, .NET SDK 9 (per build locali).
+- Requisiti: Docker Desktop attivo (Linux containers), Node 20.x, .NET SDK 8+ (repo pinnato a SDK 9 via `global.json`, target `net8.0`).
 - Avvio stack locale (API, Worker, DB, Redis, MinIO, OCR, ML, Proxy):
   - `docker compose up -d --build`
 - Test locali (opzionali):
   - .NET: `dotnet build backend/WIB.sln && dotnet test backend/WIB.Tests/WIB.Tests.csproj`
-  - Python: `python -m pytest services/ocr/tests services/ml/tests`
+  - Python (PowerShell): `python -m pytest services\ocr\tests services\ml\tests`
 - Frontend DEV (Angular):
   - Devices (upload): `npm install --prefix frontend && npm run start:devices --prefix frontend` → http://localhost:4200
   - WMC (analytics/review): `npm run start:wmc --prefix frontend` → http://localhost:4201
-  - Proxy unico per API: http://localhost:8085
+  - Proxy unico per API:
+## Aggiornamenti Recenti
+
+### Sistema di Monitoring e Logging Centralizzato ⭐ NUOVO
+- **Logging strutturato su Redis Streams**: Tutti i microservizi (Worker, API, ML, OCR) pubblicano log strutturati su Redis (chiave `app_logs`) con timestamp, livello (ERROR/WARNING/INFO/DEBUG/VERBOSE), sorgente, messaggio e metadata.
+- **Dashboard real-time nella WMC**: Nuova pagina `/monitoring` con:
+  - **Log Viewer**: streaming real-time via SSE, filtri per livello/sorgente, ricerca testuale, pause/resume, dettaglio metadata/stack trace espandibile
+  - **Service Status Monitor**: card visive per ogni servizio (Worker, API, ML, OCR) con stato (running/stopped/unhealthy), uptime e polling automatico ogni 15 secondi
+  - **Badge errori nella Home**: mostra numero errori recenti (ultimi 5 minuti) con aggiornamento automatico ogni 30 secondi
+- **API Endpoints** (richiedono ruolo `wmc`):
+  - `GET /monitoring/logs/stream` - Stream SSE real-time con filtri
+  - `GET /monitoring/logs?limit=100&level=ERROR&source=worker` - Query log recenti
+  - `GET /monitoring/logs/error-count` - Conteggio errori recenti
+  - `GET /monitoring/services/status` - Stato salute servizi
+- **Configurazione**: Variabili d'ambiente `Logging__StreamKey`, `Logging__MinLevel` (.NET) e `LOG_STREAM_KEY`, `LOG_LEVEL` (Python) già configurate in `docker-compose.yml`
+- **Documentazione completa**: `docs/MONITORING.md` con guida utilizzo, esempi codice e troubleshooting
+
+### Build consigliato dopo l'aggiornamento
+  - Ogni modifica va testata ricostruendo l'immagine/servizio interessato:
+    - API (.NET): `docker compose build api && docker compose up -d api`
+    - Worker (.NET): `docker compose build worker && docker compose up -d worker`
+    - Proxy (nginx): `docker compose build proxy && docker compose up -d proxy`
+    - Web Devices/WMC: `docker compose build web-devices web-wmc && docker compose up -d web-devices web-wmc`
+  - Esempio completo: `docker compose build proxy web-devices web-wmc api worker && docker compose up -d`
+  - In dev Angular (ng serve), non serve rebuild Docker: riavvia comunque l'API se hai toccato il backend.
+
+### Upload pi� robusto e veloce
+  - Limiti innalzati a 20 MB su proxy e web-frontend (client_max_body_size 20m) e lato API (RequestSizeLimit e FormOptions.MultipartBodyLengthLimit).
+  - L'upload non fallisce pi� se la coda Redis non � disponibile: l'immagine viene comunque salvata (202). � possibile riaccodare da WMC (Queue) quando Redis torna disponibile.
+- Devices: caricamenti sequenziali rapidi
+  - Switch �Modalit� sequenziale�: avvia l'upload subito dopo lo scatto/selezione e, a completamento, propone subito il prossimo scatto.
+  - Pulsante �Prossimo scontrino� post�successo per passare velocemente alla foto successiva.
+- WMC: coda e modifica scontrini
+  - La pagina Queue non mostra pi� le chiavi gi� processate (evita duplicati �in coda� e �gi� processati�).
+  - Migliorata l'API di editing: validazione addLines, normalizzazione numeri, riordino sicuro, gestione concorrenza (409) e messaggi chiari lato UI (400/409).
+- Build consigliato dopo l'aggiornamento
+  - docker compose build proxy web-devices web-wmc api && docker compose up -d proxy web-devices web-wmc api
+  - In dev Angular, se usi ng serve, non serve rebuild Docker ma ricorda i limiti aggiornati lato API. http://localhost:8085
   - Nota: il dev proxy Angular (`frontend/proxy.conf.json`) inoltra ora anche `/auth` e `/ml` verso `http://localhost:8080` per supportare login e suggerimenti ML in sviluppo.
 
 **Elaborazione Scontrini (panoramica rapida)**
@@ -255,8 +292,28 @@ Proxy Nginx (container `proxy`):
 ## Configurazione OCR/KIE (estrazione campi e righe)
 
 - Stato attuale
-  - Il servizio OCR/KIE è eseguibile out‑of‑the‑box in modalità stub (ritorna campi/righe fittizie coerenti) per consentire l’integrazione end‑to‑end.
+  - Il servizio OCR/KIE è eseguibile out-of-the-box in modalità stub (ritorna campi/righe fittizie coerenti) per consentire l’integrazione end-to-end.
   - Per l’estrazione reale occorre abilitare un motore KIE e implementare/invocare un’inferenza reale in `services/ocr/main.py` (metodo `KieEngine.infer_image`).
+
+- Parametri Tesseract (env)
+  - `TESSERACT_LANG` (default `ita+eng`): lingue per l’OCR.
+  - `TESSERACT_PSM` (default `6`): Page Segmentation Mode; 6 = blocco uniforme di testo.
+  - `TESSERACT_OEM` (default `3`): Engine Mode; 3 = LSTM + legacy.
+  - Esempio (PowerShell):
+    - `$env:TESSERACT_LANG = "ita+eng"; $env:TESSERACT_PSM = "6"; $env:TESSERACT_OEM = "3"`
+  - Queste variabili influenzano sia `image_to_data` sia `image_to_string`.
+
+- Sample di riferimento
+  - JSON “ground truth” di esempio: `docs/sample_receipt.json` (adatta i valori al tuo scontrino reale).
+  - Esecuzione rapida (OCR):
+    - `docker compose build ocr && docker compose up -d ocr`
+    - `curl -F "file=@docs/sample_receipt.jpg" http://localhost:8081/extract`
+
+### Strumenti di sviluppo
+
+- Node 20 LTS side-by-side:
+  - Script: `scripts/install-node20.ps1` (default installa 20.17.0 in `%USERPROFILE%\node20`).
+  - Dopo l’installazione, la sessione corrente include `%USERPROFILE%\node20` nel PATH; verifica con: `%USERPROFILE%\node20\node.exe -v`.
 
 - Opzione A: PP‑Structure (PaddleOCR)
   - Prepara i pesi/config in una cartella locale, ad es. `.data/kie`.
@@ -370,6 +427,7 @@ Feature minime incluse:
 
 ## API Chiave
 
+### Receipts & Analytics
 - `POST /receipts` (upload) [pubblico]
 - `GET /receipts` [wmc]
 - `GET /receipts/{id}` [wmc]
@@ -377,8 +435,18 @@ Feature minime incluse:
 - `GET /receipts/pending?maxConfidence=` [wmc]
 - `GET /analytics/spending?from=...&to=...` [wmc]
 - `GET /analytics/price-history?productId=...&storeId=...` [wmc]
+
+### ML & Classification
 - `GET /ml/suggestions?labelRaw=...` [wmc]
 - `POST /ml/feedback` [wmc]
+
+### Monitoring & Logs ⭐ NUOVO
+- `GET /monitoring/logs/stream` [wmc] - Stream SSE real-time
+- `GET /monitoring/logs?limit=100&level=ERROR&source=worker` [wmc] - Query log recenti
+- `GET /monitoring/logs/error-count` [wmc] - Conteggio errori (ultimi 5 min)
+- `GET /monitoring/services/status` [wmc] - Stato salute servizi
+
+### Authentication
 - `POST /auth/token { username, password }` → `{ accessToken, tokenType, expiresIn, role }`
 
 ## Politica di Testing
@@ -449,3 +517,39 @@ Verifiche manuali utili:
 - scikit‑learn: libreria ML Python (TF‑IDF, SGDClassifier, ecc.).
 - Joblib: utility per serializzare/persistire modelli e vettorizzatori scikit‑learn.
 - Qdrant: database vettoriale per similitudine/ricerca per embedding (opzionale nello stack).
+
+## Repository Guidelines (Sintesi)
+
+- Struttura
+  - `backend/` (.NET 8): `WIB.API` (REST), `WIB.Worker` (background), librerie `WIB.*`, test `backend/WIB.Tests`, soluzione `backend/WIB.sln`.
+  - `frontend/` (Angular 19): app `wib-devices` e `wib-wmc` in `frontend/apps/*/src`.
+  - `services/` (FastAPI): `ocr/` e `ml/` con `main.py`, `Dockerfile`, `requirements.txt`, test in `services/*/tests`.
+  - `proxy/` (nginx), `docker-compose.yml` (stack locale), `scripts/` (helper), `docs/` (dati/strumenti).
+
+- Comandi principali
+  - Full stack: `docker compose up -d --build` → proxy `http://localhost:8085`.
+  - Backend: `dotnet build backend/WIB.sln`, test `dotnet test backend/WIB.Tests/WIB.Tests.csproj`, run API `dotnet run --project backend/WIB.API`, run worker `dotnet run --project backend/WIB.Worker`.
+  - Frontend: `npm install --prefix frontend`, dev `npm run start:devices|start:wmc --prefix frontend`, build `npm run build:devices|build:wmc`.
+  - Python: `python -m pip install -r services/ocr/requirements.txt` (e per `ml`), test `python -m pytest services\ocr\tests services\ml\tests`.
+
+- Stile/Coding
+  - C#: indent 4 spazi; PascalCase per tipi/metodi, camelCase per variabili/campi; 1 classe per file in `WIB.*`.
+  - TypeScript/Angular: indent 2 spazi; file `*.component.ts|html|css`; preferire template/style URLs.
+  - Python: PEP 8 (4 spazi), type hints ove pratico; test `test_*.py`.
+
+- Testing
+  - Backend: xUnit; coverage `dotnet test /p:CollectCoverage=true` (coverlet). Aggiungere test per nuovi handler/controller.
+  - Frontend: Jasmine/Karma (`npm run test:devices|test:wmc --prefix frontend`).
+  - Python: pytest in `services/*/tests`.
+
+- Sicurezza/Config
+  - Env annidate con `__` (es.: `ConnectionStrings__Default`, `Ocr__Endpoint`, `Ml__Endpoint`, `Auth__Key`).
+  - Niente segreti in repo; montare dati/modelli sotto `.data/`. Porte: API 8080, OCR 8081, ML 8082, Proxy 8085.
+
+## Direttive Windows 11 (PowerShell)
+
+- Usare PowerShell, non sintassi Bash (`export`, `&&`, `VAR=cmd`).
+- Variabili d'ambiente nella stessa sessione: `$env:KEY = 'value'`.
+- Docker locale: `docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`.
+- Preferire rebuild selettivi/restart: `docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`; usare `--no-cache` solo se necessario.
+- HTTP client: `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl`).

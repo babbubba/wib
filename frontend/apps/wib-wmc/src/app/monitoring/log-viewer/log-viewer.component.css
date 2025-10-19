@@ -1,0 +1,124 @@
+.log-viewer-container {
+  margin-bottom: 2rem;
+}
+
+.controls-panel {
+  background-color: #f8f9fa;
+}
+
+.logs-container {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.log-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.log-row:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.log-error {
+  background-color: rgba(220, 53, 69, 0.05);
+  border-left: 3px solid #dc3545;
+}
+
+.log-warning {
+  background-color: rgba(255, 193, 7, 0.05);
+  border-left: 3px solid #ffc107;
+}
+
+.log-info {
+  background-color: rgba(13, 110, 253, 0.05);
+  border-left: 3px solid #0d6efd;
+}
+
+.log-debug {
+  background-color: rgba(108, 117, 125, 0.03);
+  border-left: 3px solid #6c757d;
+}
+
+.log-verbose {
+  background-color: rgba(248, 249, 250, 0.5);
+  border-left: 3px solid #e9ecef;
+}
+
+.log-title {
+  font-weight: 500;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-message {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-detail-row {
+  background-color: #f8f9fa;
+}
+
+.log-detail-content {
+  padding: 1rem;
+  font-size: 0.875rem;
+}
+
+.metadata-pre {
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  font-size: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Custom scrollbar for logs container */
+.logs-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.logs-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.logs-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .logs-container {
+    max-height: 400px;
+  }
+
+  .log-title,
+  .log-message {
+    max-width: 150px;
+  }
+}

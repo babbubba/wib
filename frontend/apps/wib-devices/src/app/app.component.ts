@@ -1,15 +1,18 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpEventType } from '@angular/common/http';
+import { AuthService } from './auth.service';
+import { LoginComponent } from './login.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LoginComponent],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
 })
 export class AppComponent {
+  @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   file = signal<File | null>(null);
   fileName = signal<string>('');
   uploading = signal<boolean>(false);
@@ -18,8 +21,12 @@ export class AppComponent {
   error = signal<string>('');
   preview = signal<string>('');
   successId = signal<string>('');
+  multiMode = signal<boolean>(true);
+  isAuthenticated = signal<boolean>(false);
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private auth: AuthService) {
+    this.isAuthenticated.set(this.auth.isAuthenticated());
+  }
 
   onFile(ev: Event) {
     const input = ev.target as HTMLInputElement;
@@ -32,13 +39,19 @@ export class AppComponent {
       if (this.preview()) URL.revokeObjectURL(this.preview());
       this.preview.set(URL.createObjectURL(f));
     }
+    // In modalità sequenziale, carica subito appena selezionato
+    if (this.multiMode() && this.file()) {
+      // piccola pausa per permettere il rendering della preview
+      setTimeout(() => this.upload(), 50);
+    }
   }
 
   upload() {
     if (!this.file()) return;
     this.uploading.set(true);
     this.progress.set(0);
-    this.compressImage(this.file()!, 2048, 0.85).then((blob) => {
+    // Riduci la compressione per migliorare la qualità (lato lungo 2560px, qualità 0.95)
+    this.compressImage(this.file()!, 2560, 0.95).then((blob) => {
       const form = new FormData();
       const fname = this.fileName() || 'receipt.jpg';
       form.append('file', new File([blob], fname, { type: 'image/jpeg' }));
@@ -53,6 +66,8 @@ export class AppComponent {
             this.successId.set(r?.objectKey || '');
             this.uploading.set(false);
             this.progress.set(100);
+            // in modalità sequenziale passa subito al prossimo
+            this.afterSuccessNext();
           }
         },
         error: (e) => {
@@ -80,6 +95,14 @@ export class AppComponent {
     this.newReceipt();
     // Optionally, scroll to top to the capture button
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  }
+
+  afterSuccessNext() {
+    if (this.multiMode()) {
+      this.newReceipt();
+      // Prova ad aprire automaticamente la fotocamera per la prossima foto
+      try { setTimeout(() => this.fileInput?.nativeElement?.click(), 200); } catch {}
+    }
   }
 
   private async compressImage(file: File, maxLongSide = 2048, quality = 0.85): Promise<Blob> {

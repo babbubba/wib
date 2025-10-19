@@ -8,33 +8,84 @@ using WIB.Infrastructure.Data;
 namespace WIB.API.Controllers;
 
 [ApiController]
-[Authorize(Roles = "wmc")]
 [Route("receipts")]
-public class ReceiptController : ControllerBase
+public class ReceiptController : BaseApiController
 {
     private readonly IImageStorage _imageStorage;
     private readonly IReceiptQueue _queue;
     private readonly WibDbContext _db;
+    private readonly IRedisLogger _redisLogger;
 
-    public ReceiptController(IImageStorage imageStorage, IReceiptQueue queue, WibDbContext db)
+    public ReceiptController(IImageStorage imageStorage, IReceiptQueue queue, WibDbContext db, IRedisLogger redisLogger)
     {
         _imageStorage = imageStorage;
         _queue = queue;
         _db = db;
+        _redisLogger = redisLogger;
     }
 
     [HttpPost]
-    [AllowAnonymous]
-    [RequestSizeLimit(10 * 1024 * 1024)]
+    [Authorize(Roles = "device")]
+    [RequestSizeLimit(20 * 1024 * 1024)]
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
     {
-        await using var stream = file.OpenReadStream();
-        var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
-        await _queue.EnqueueAsync(objectKey, ct);
-        return Accepted(new { objectKey });
+        var userId = GetCurrentUserId();
+
+        try
+        {
+            await _redisLogger.InfoAsync("Receipt Upload", $"User {userId} uploading receipt, size: {file.Length} bytes", new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["fileName"] = file.FileName,
+                ["fileSize"] = file.Length,
+                ["contentType"] = file.ContentType ?? "unknown"
+            }, ct);
+
+            await using var stream = file.OpenReadStream();
+            var objectKey = await _imageStorage.SaveAsync(stream, file.ContentType, ct);
+
+            await _redisLogger.InfoAsync("Receipt Uploaded", $"Receipt saved to storage: {objectKey}", new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["objectKey"] = objectKey
+            }, ct);
+
+            var queueItem = new ReceiptQueueItem(objectKey, userId);
+            try
+            {
+                await _queue.EnqueueAsync(queueItem, ct);
+                await _redisLogger.InfoAsync("Receipt Queued", $"Receipt queued for processing: {objectKey}", new Dictionary<string, object>
+                {
+                    ["userId"] = userId.ToString(),
+                    ["objectKey"] = objectKey
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                // Non bloccare l'upload se la coda è temporaneamente indisponibile
+                await _redisLogger.WarningAsync("Queue Enqueue Failed", $"Failed to queue receipt {objectKey}, but upload succeeded", new Dictionary<string, object>
+                {
+                    ["userId"] = userId.ToString(),
+                    ["objectKey"] = objectKey,
+                    ["error"] = ex.Message
+                }, ct);
+            }
+
+            return Accepted(new { objectKey });
+        }
+        catch (Exception ex)
+        {
+            await _redisLogger.ErrorAsync("Upload Failed", "Receipt upload failed", ex, new Dictionary<string, object>
+            {
+                ["userId"] = userId.ToString(),
+                ["fileName"] = file.FileName
+            }, ct);
+            throw;
+        }
     }
 
     [HttpGet]
+    [Authorize(Roles = "wmc")]
     public async Task<ActionResult<IEnumerable<ReceiptListItemDto>>> List([FromQuery] int skip = 0, [FromQuery] int take = 20, CancellationToken ct = default)
     {
         if (take <= 0 || take > 100) take = 20;
@@ -56,6 +107,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("pending")]
+    [Authorize(Roles = "wmc")]
     public async Task<ActionResult<IEnumerable<LabelingItemDto>>> Pending([FromQuery] decimal maxConfidence = 0.6m, [FromQuery] int take = 50, CancellationToken ct = default)
     {
         if (take <= 0 || take > 200) take = 50;
@@ -80,6 +132,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Roles = "wmc")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts
@@ -112,11 +165,15 @@ public class ReceiptController : ControllerBase
                 City = receipt.StoreLocation?.City,
                 Chain = receipt.Store?.Chain,
                 PostalCode = receipt.StoreLocation?.PostalCode,
-                VatNumber = receipt.StoreLocation?.VatNumber
+                VatNumber = receipt.StoreLocation?.VatNumber,
+                OcrX = receipt.OcrStoreX,
+                OcrY = receipt.OcrStoreY,
+                OcrW = receipt.OcrStoreW,
+                OcrH = receipt.OcrStoreH
             },
             Datetime = receipt.Date,
             Currency = receipt.Currency,
-            Lines = receipt.Lines.OrderBy(l => l.Id).Select(l => {
+            Lines = receipt.Lines.OrderBy(l => l.SortIndex).ThenBy(l => l.Id).Select(l => {
                 var catId = l.PredictedCategoryId ?? l.Product?.CategoryId;
                 string? catName = null;
                 if (l.PredictedCategoryId.HasValue)
@@ -129,6 +186,10 @@ public class ReceiptController : ControllerBase
                     UnitPrice = l.UnitPrice,
                     LineTotal = l.LineTotal,
                     VatRate = l.VatRate,
+                    OcrX = l.OcrX,
+                    OcrY = l.OcrY,
+                    OcrW = l.OcrW,
+                    OcrH = l.OcrH,
                     CategoryId = catId,
                     CategoryName = catName
                 };
@@ -145,6 +206,7 @@ public class ReceiptController : ControllerBase
     }
 
     [HttpGet("{id:guid}/image")]
+    [Authorize(Roles = "wmc")]
     public async Task<IActionResult> GetImage(Guid id, CancellationToken ct)
     {
         var receipt = await _db.Receipts.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -153,6 +215,63 @@ public class ReceiptController : ControllerBase
 
         var stream = await _imageStorage.GetAsync(receipt.ImageObjectKey!, ct);
         return File(stream, "image/jpeg");
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "wmc")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var receipt = await _db.Receipts
+            .Include(r => r.Lines)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (receipt == null) return NotFound();
+
+        var storeId = receipt.StoreId;
+        var day = receipt.Date.UtcDateTime.Date;
+        var affectedProducts = receipt.Lines.Where(l => l.ProductId.HasValue).Select(l => l.ProductId!.Value).Distinct().ToList();
+        var imageKey = receipt.ImageObjectKey;
+
+        _db.Receipts.Remove(receipt);
+        await _db.SaveChangesAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(imageKey))
+        {
+            try { await _imageStorage.DeleteAsync(imageKey!, ct); } catch { /* ignore */ }
+        }
+
+        if (affectedProducts.Count > 0 && storeId != Guid.Empty)
+        {
+            foreach (var pid in affectedProducts)
+            {
+                var query = from rl in _db.ReceiptLines.AsNoTracking()
+                            join r in _db.Receipts.AsNoTracking() on rl.ReceiptId equals r.Id
+                            where rl.ProductId == pid && r.StoreId == storeId && r.Date.UtcDateTime.Date == day
+                            select new { rl.UnitPrice, rl.PricePerKg };
+                var list = await query.ToListAsync(ct);
+                var minUnit = list.Count > 0 ? list.Min(x => x.UnitPrice) : (decimal?)null;
+                var minPpk = list.Where(x => x.PricePerKg.HasValue).Select(x => x.PricePerKg!.Value).DefaultIfEmpty().Min();
+                var existing = await _db.PriceHistories.FirstOrDefaultAsync(ph => ph.ProductId == pid && ph.StoreId == storeId && ph.Date == day, ct);
+                if (minUnit == null)
+                {
+                    if (existing != null) _db.PriceHistories.Remove(existing);
+                }
+                else
+                {
+                    if (existing == null)
+                    {
+                        _db.PriceHistories.Add(new WIB.Domain.PriceHistory { ProductId = pid, StoreId = storeId, Date = day, UnitPrice = minUnit.Value, PricePerKg = minPpk == 0 ? null : minPpk });
+                    }
+                    else
+                    {
+                        existing.UnitPrice = minUnit.Value;
+                        existing.PricePerKg = minPpk == 0 ? null : minPpk;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return NoContent();
     }
 
 }

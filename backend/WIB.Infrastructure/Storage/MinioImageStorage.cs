@@ -59,4 +59,12 @@ public class MinioImageStorage : IImageStorage
         ms.Position = 0;
         return ms;
     }
+
+    public async Task DeleteAsync(string objectKey, CancellationToken ct)
+    {
+        var args = new RemoveObjectArgs()
+            .WithBucket(_options.Bucket)
+            .WithObject(objectKey);
+        await _client.RemoveObjectAsync(args, ct);
+    }
 }

@@ -17,7 +17,7 @@ namespace WIB.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("ProductVersion", "8.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -138,6 +138,10 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<DateTime>("Date")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<decimal?>("PricePerKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -242,13 +246,25 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<string>("ImageObjectKey")
                         .HasColumnType("text");
 
+                    b.Property<int?>("OcrStoreH")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreW")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreX")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrStoreY")
+                        .HasColumnType("integer");
+
                     b.Property<string>("RawText")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("StoreLocationId")
+                    b.Property<Guid>("StoreId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("StoreId")
+                    b.Property<Guid?>("StoreLocationId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal?>("TaxTotal")
@@ -259,11 +275,16 @@ namespace WIB.Infrastructure.Data.Migrations
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("StoreId");
 
                     b.HasIndex("StoreLocationId");
 
-                    b.HasIndex("StoreId");
+                    b.HasIndex("UserId");
 
                     b.ToTable("Receipts");
                 });
@@ -282,6 +303,18 @@ namespace WIB.Infrastructure.Data.Migrations
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
 
+                    b.Property<int?>("OcrH")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrW")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrX")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("OcrY")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("PredictedCategoryId")
                         .HasColumnType("uuid");
 
@@ -291,6 +324,10 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<decimal?>("PredictionConfidence")
                         .HasPrecision(3, 2)
                         .HasColumnType("numeric(3,2)");
+
+                    b.Property<decimal?>("PricePerKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
 
                     b.Property<Guid?>("ProductId")
                         .HasColumnType("uuid");
@@ -302,6 +339,11 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Property<Guid>("ReceiptId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("SortIndex")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(10, 3)
                         .HasColumnType("numeric(10,3)");
@@ -310,6 +352,10 @@ namespace WIB.Infrastructure.Data.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)");
 
+                    b.Property<decimal?>("WeightKg")
+                        .HasPrecision(10, 3)
+                        .HasColumnType("numeric(10,3)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ProductId");
@@ -317,6 +363,65 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.HasIndex("ReceiptId");
 
                     b.ToTable("ReceiptLines");
+                });
+
+            modelBuilder.Entity("WIB.Domain.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceInfo")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("RevokedReason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens");
+                });
+
+            modelBuilder.Entity("WIB.Domain.Role", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Roles");
                 });
 
             modelBuilder.Entity("WIB.Domain.Store", b =>
@@ -363,6 +468,88 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.HasIndex("StoreId");
 
                     b.ToTable("StoreLocations");
+                });
+
+            modelBuilder.Entity("WIB.Domain.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EmailVerificationToken")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordResetToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("PasswordResetTokenExpiry")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("Username")
+                        .IsUnique();
+
+                    b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("WIB.Domain.UserRole", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserRoles");
                 });
 
             modelBuilder.Entity("WIB.Domain.Category", b =>
@@ -443,8 +630,17 @@ namespace WIB.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("StoreLocationId");
 
+                    b.HasOne("WIB.Domain.User", "User")
+                        .WithMany("Receipts")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Store");
+
                     b.Navigation("StoreLocation");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("WIB.Domain.ReceiptLine", b =>
@@ -464,6 +660,47 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("Receipt");
                 });
 
+            modelBuilder.Entity("WIB.Domain.RefreshToken", b =>
+                {
+                    b.HasOne("WIB.Domain.User", "User")
+                        .WithMany("RefreshTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
+                {
+                    b.HasOne("WIB.Domain.Store", "Store")
+                        .WithMany("Locations")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
+            modelBuilder.Entity("WIB.Domain.UserRole", b =>
+                {
+                    b.HasOne("WIB.Domain.Role", "Role")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("WIB.Domain.User", "User")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("WIB.Domain.Category", b =>
                 {
                     b.Navigation("Children");
@@ -479,21 +716,25 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("Lines");
                 });
 
-            modelBuilder.Entity("WIB.Domain.Store", b =>
+            modelBuilder.Entity("WIB.Domain.Role", b =>
                 {
-                    b.Navigation("Receipts");
-                    b.Navigation("Locations");
+                    b.Navigation("UserRoles");
                 });
 
-            modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
+            modelBuilder.Entity("WIB.Domain.Store", b =>
                 {
-                    b.HasOne("WIB.Domain.Store", "Store")
-                        .WithMany("Locations")
-                        .HasForeignKey("StoreId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                    b.Navigation("Locations");
 
-                    b.Navigation("Store");
+                    b.Navigation("Receipts");
+                });
+
+            modelBuilder.Entity("WIB.Domain.User", b =>
+                {
+                    b.Navigation("Receipts");
+
+                    b.Navigation("RefreshTokens");
+
+                    b.Navigation("UserRoles");
                 });
 #pragma warning restore 612, 618
         }
