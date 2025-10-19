@@ -23,6 +23,7 @@ public class WibDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
+    public DbSet<StoreAlias> StoreAliases => Set<StoreAlias>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -136,5 +137,23 @@ public class WibDbContext : DbContext
 
         // ProductType Aliases as JSON (store as text for portability)
         modelBuilder.Entity<ProductType>().Property(pt => pt.AliasesJson).HasColumnType("text");
+
+        // Store normalization and aliases
+        modelBuilder.Entity<Store>(b =>
+        {
+            b.Property(s => s.Name).HasMaxLength(256).IsRequired();
+            b.Property(s => s.NameNormalized).HasMaxLength(256).IsRequired(false);
+            // Unique index will be enforced in a later migration (finalize step)
+        });
+
+        modelBuilder.Entity<StoreAlias>(b =>
+        {
+            b.Property(a => a.AliasNormalized).HasMaxLength(256).IsRequired();
+            b.HasOne(a => a.Store)
+                .WithMany(s => s.Aliases)
+                .HasForeignKey(a => a.StoreId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(a => new { a.StoreId, a.AliasNormalized }).IsUnique();
+        });
     }
 }

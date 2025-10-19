@@ -42,11 +42,13 @@ builder.Services.AddScoped<IReceiptStorage, ReceiptStorage>();
 builder.Services.AddScoped<INameMatcher, WIB.Infrastructure.Services.EnhancedNameMatcher>();
 builder.Services.AddScoped<IProductMatcher, WIB.Infrastructure.Services.ProductMatcher>();
 builder.Services.AddScoped<ProcessReceiptCommandHandler>();
+builder.Services.AddScoped<IStoreService, WIB.Infrastructure.Services.StoreService>();
 
 // Authentication services
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<DatabaseSeedService>();
+builder.Services.AddHostedService<WIB.API.Services.StoreBackfillHostedService>();
 
 // Database configuration
 var connectionString = builder.Configuration.GetConnectionString("Default")
