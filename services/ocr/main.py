@@ -220,95 +220,31 @@ from datetime import datetime, timezone
 from dateutil import parser as dateparser
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 import pytesseract
+from .preprocessing import preprocess_image
 
 
-def preprocess_image(image_bytes: bytes) -> Image.Image:
-    """Apply robust preprocessing to improve OCR accuracy.
-    Steps: EXIF transpose, grayscale, de-skew (if OpenCV available),
-    denoise, local contrast (CLAHE), adaptive threshold, unsharp.
-    Returns a PIL Image (8-bit) optimized for Tesseract.
-    """
-    with Image.open(io.BytesIO(image_bytes)) as raw:
-        # Normalize orientation from EXIF
-        img = ImageOps.exif_transpose(raw)
-        # Convert to grayscale early
-        img = ImageOps.grayscale(img)
-
-        # Try OpenCV-based enhancements when available
+def _get_tesseract_params() -> tuple[str, str]:
+    lang = os.getenv("TESSERACT_LANG", "ita+eng").strip() or "ita+eng"
+    def _to_int(name: str, default: int) -> int:
         try:
-            import numpy as np  # type: ignore
-            import cv2  # type: ignore
-            arr = np.array(img)
-
-            # Denoise gently to preserve edges
-            arr = cv2.fastNlMeansDenoising(arr, h=10)
-
-            # Estimate skew angle using Hough lines on edges
-            edges = cv2.Canny(arr, 50, 150)
-            lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=120)
-            angle_deg = 0.0
-            if lines is not None and len(lines) > 0:
-                angles = []
-                for rho_theta in lines[:100]:
-                    rho, theta = rho_theta[0]
-                    # Convert angle to degrees around horizontal
-                    a = (theta * 180.0 / np.pi) - 90.0
-                    # Limit to plausible skew range
-                    if -45 <= a <= 45:
-                        angles.append(a)
-                if angles:
-                    angle_deg = float(np.median(angles))
-            if abs(angle_deg) > 0.3:
-                # Rotate around image center to deskew
-                (h, w) = arr.shape[:2]
-                M = cv2.getRotationMatrix2D((w // 2, h // 2), angle_deg, 1.0)
-                arr = cv2.warpAffine(arr, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-
-            # Local contrast via CLAHE
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            arr = clahe.apply(arr)
-
-            # Adaptive threshold to obtain crisp text strokes
-            thr = cv2.adaptiveThreshold(
-                arr, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
-            )
-
-            # Slight dilation then erosion to close small gaps (morphological closing)
-            kernel = np.ones((2, 2), np.uint8)
-            thr = cv2.morphologyEx(thr, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-            # Convert back to PIL
-            out = Image.fromarray(thr)
+            v = int(os.getenv(name, str(default)))
+            return v
         except Exception:
-            # Fallback: PIL-only pipeline
-            out = img
-            out = ImageOps.autocontrast(out)
-            out = out.filter(ImageFilter.MedianFilter(size=3))
-            out = out.filter(ImageFilter.SHARPEN)
-            # Slight brightness/contrast boost
-            out = ImageEnhance.Contrast(out).enhance(1.2)
-            out = ImageEnhance.Brightness(out).enhance(1.05)
-
-        # If very small, upscale to help Tesseract recognize small glyphs
-        try:
-            min_side = min(out.size)
-            if min_side < 800:
-                scale = 800.0 / float(min_side)
-                new_size = (int(out.width * scale), int(out.height * scale))
-                out = out.resize(new_size, Image.Resampling.LANCZOS)
-        except Exception:
-            pass
-
-        return out
+            return default
+    psm = _to_int("TESSERACT_PSM", 6)
+    oem = _to_int("TESSERACT_OEM", 3)
+    cfg = f"--oem {oem} --psm {psm}"
+    return lang, cfg
 
 
 def ocr_text(image_bytes: bytes) -> str:
     try:
         img = preprocess_image(image_bytes)
+        lang, tess_cfg = _get_tesseract_params()
         # Prefer structured output to preserve visual row order
         try:
             data = pytesseract.image_to_data(
-                img, output_type=pytesseract.Output.DICT, config="--oem 3 --psm 6"
+                img, output_type=pytesseract.Output.DICT, config=tess_cfg, lang=lang
             )
             n = len(data.get("text", []))
             rows: dict[tuple[int, int, int], dict] = {}
@@ -341,7 +277,7 @@ def ocr_text(image_bytes: bytes) -> str:
             # Fallback to plain text if structured data fails
             pass
 
-        text = pytesseract.image_to_string(img, config="--oem 3 --psm 6")
+        text = pytesseract.image_to_string(img, config=tess_cfg, lang=lang)
         return text
     except Exception:
         return ""
@@ -349,7 +285,8 @@ def ocr_text(image_bytes: bytes) -> str:
 def ocr_lines(image_bytes: bytes) -> list[dict]:
     from pytesseract import Output
     img = preprocess_image(image_bytes)
-    data = pytesseract.image_to_data(img, output_type=Output.DICT)
+    lang, tess_cfg = _get_tesseract_params()
+    data = pytesseract.image_to_data(img, output_type=Output.DICT, config=tess_cfg, lang=lang)
     n = len(data['text'])
     groups = {}
     order = []

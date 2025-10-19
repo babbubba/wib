@@ -292,8 +292,28 @@ Proxy Nginx (container `proxy`):
 ## Configurazione OCR/KIE (estrazione campi e righe)
 
 - Stato attuale
-  - Il servizio OCR/KIE è eseguibile out‑of‑the‑box in modalità stub (ritorna campi/righe fittizie coerenti) per consentire l’integrazione end‑to‑end.
+  - Il servizio OCR/KIE è eseguibile out-of-the-box in modalità stub (ritorna campi/righe fittizie coerenti) per consentire l’integrazione end-to-end.
   - Per l’estrazione reale occorre abilitare un motore KIE e implementare/invocare un’inferenza reale in `services/ocr/main.py` (metodo `KieEngine.infer_image`).
+
+- Parametri Tesseract (env)
+  - `TESSERACT_LANG` (default `ita+eng`): lingue per l’OCR.
+  - `TESSERACT_PSM` (default `6`): Page Segmentation Mode; 6 = blocco uniforme di testo.
+  - `TESSERACT_OEM` (default `3`): Engine Mode; 3 = LSTM + legacy.
+  - Esempio (PowerShell):
+    - `$env:TESSERACT_LANG = "ita+eng"; $env:TESSERACT_PSM = "6"; $env:TESSERACT_OEM = "3"`
+  - Queste variabili influenzano sia `image_to_data` sia `image_to_string`.
+
+- Sample di riferimento
+  - JSON “ground truth” di esempio: `docs/sample_receipt.json` (adatta i valori al tuo scontrino reale).
+  - Esecuzione rapida (OCR):
+    - `docker compose build ocr && docker compose up -d ocr`
+    - `curl -F "file=@docs/sample_receipt.jpg" http://localhost:8081/extract`
+
+### Strumenti di sviluppo
+
+- Node 20 LTS side-by-side:
+  - Script: `scripts/install-node20.ps1` (default installa 20.17.0 in `%USERPROFILE%\node20`).
+  - Dopo l’installazione, la sessione corrente include `%USERPROFILE%\node20` nel PATH; verifica con: `%USERPROFILE%\node20\node.exe -v`.
 
 - Opzione A: PP‑Structure (PaddleOCR)
   - Prepara i pesi/config in una cartella locale, ad es. `.data/kie`.
@@ -533,5 +553,3 @@ Verifiche manuali utili:
 - Docker locale: `docker compose up -d --build`, `docker compose ps`, `docker compose logs -f`, `docker compose logs -f api`.
 - Preferire rebuild selettivi/restart: `docker compose build api worker` poi `docker compose up -d`, oppure `docker compose restart api`; usare `--no-cache` solo se necessario.
 - HTTP client: `Invoke-RestMethod`/`Invoke-WebRequest` o `curl.exe` (non l'alias `curl`).
-
-

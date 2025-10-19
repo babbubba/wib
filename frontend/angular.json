@@ -32,13 +32,13 @@
             "tsConfig": "apps/wib-devices/tsconfig.spec.json",
             "karmaConfig": "karma.conf.js",
             "polyfills": ["zone.js"],
-"assets": [
-              "apps/wib-wmc/src/assets"
+            "assets": [
+              "apps/wib-devices/src/assets"
             ],
             "styles": [
               "bootstrap/dist/css/bootstrap.min.css",
               "node_modules/@ng-select/ng-select/themes/default.theme.css",
-              "apps/wib-wmc/src/styles.css"
+              "apps/wib-devices/src/styles.css"
             ],
             "scripts": []
           }

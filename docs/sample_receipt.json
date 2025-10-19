@@ -1,0 +1,50 @@
+{
+  "store": {
+    "name": "Supermercato Rossi",
+    "address": "Via Roma 12",
+    "city": "Milano",
+    "chain": "Coop",
+    "postalCode": "20121",
+    "vatNumber": "12345678901"
+  },
+  "datetime": "2025-10-18T18:42:15+02:00",
+  "currency": "EUR",
+  "lines": [
+    {
+      "labelRaw": "Latte UHT 1L",
+      "qty": 1.0,
+      "unitPrice": 1.29,
+      "lineTotal": 1.29,
+      "vatRate": 4
+    },
+    {
+      "labelRaw": "Pasta Spaghetti 500g",
+      "qty": 2.0,
+      "unitPrice": 0.99,
+      "lineTotal": 1.98,
+      "vatRate": 10
+    },
+    {
+      "labelRaw": "Banane sfuse",
+      "qty": 1.276,
+      "unitPrice": 1.79,
+      "lineTotal": 2.28,
+      "vatRate": 4,
+      "weightKg": 1.276,
+      "pricePerKg": 1.79
+    },
+    {
+      "labelRaw": "Shampoo 250ml",
+      "qty": 1.0,
+      "unitPrice": 3.99,
+      "lineTotal": 3.99,
+      "vatRate": 22
+    }
+  ],
+  "totals": {
+    "subtotal": 8.50,
+    "tax": 1.04,
+    "total": 9.54
+  }
+}
+

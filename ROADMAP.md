@@ -4,68 +4,12 @@
 **Iniziato**: 2025-01-12  
 **Obiettivo**: Stabilizzare, migliorare e estendere il sistema WIB
 
----
-
-## ✅ COMPLETATO
-
-### Setup Iniziale
-- ✅ Creato branch `warp-refactor`
-- ✅ Configurato Docker Compose con nome progetto isolato (`name: warp-refactor`)
-- ✅ Analizzato stato del codice e identificato problemi critici
-
----
-
-## 🎯 ROADMAP DETTAGLIATA
-
-## **FASE 1: 🔧 Stabilizzazione e Bug Fix (1-2 giorni)**
-
-### 1.1 **Pulizia del Workspace** ⚠️ CRITICO
-- [x] Commit delle modifiche in corso
-- [x] Verifica che tutti i file siano tracciati
-- [x] Test smoke dell'ambiente isolato
-
-### 1.2 **Fix Inconsistenze API ML** 🔥 ALTO  
-- [x] Analizzare interfaccia `IProductClassifier`
-- [x] Uniformare chiamate da tuple a oggetto strutturato
-- [x] Aggiornare `ProcessReceiptCommandHandler.cs`
-- [x] Test delle modifiche
-
-### 1.3 **Refactoring ReceiptEditController** 🔧 ALTO
-- [x] Estrarre metodi privati per logica complessa
-- [x] Migliorare formattazione e leggibilità
-- [x] Aggiungere validazione input più robusta
-- [x] Test controller endpoints
-
----
-
-## **FASE 2: 🏗️ Architettura e Funzionalità Core (2-3 giorni)**
-
-### 2.1 **Implementazione Product-Line Association** 🎯 CRITICO
-- [x] Implementare collegamento `ReceiptLine` → `ProductId`
-- [x] Creare `IProductMatcher` interface
-- [x] Implementare logica di matching/creazione prodotti
-- [x] Test dell'associazione prodotti
-
-### 2.2 **Miglioramento Name Matching** 🎯 MEDIO
-- [x] Migliorare algoritmi fuzzy matching per negozi
-- [x] Implementare normalizzazione brand/catene
-- [x] Cache in memoria per lookup frequenti
-- [x] Test performance matching
-
-### 2.3 **Gestione Errori Unificata** 🛵️ MEDIO
-- [x] Introdurre pattern Result<T> o middleware uniforme
-- [x] Standardizzare error handling nei controller
-- [x] Implementare logging strutturato
-- [x] Test gestione errori
-
----
-
 ## **FASE 3: 🧠 ML e OCR Enhancement (3-4 giorni)**
 
 ### 3.1 **OCR/KIE Production Ready** 🚀 ALTO
-- [ ] Configurare Tesseract reale con ottimizzazioni italiane
+- [x] Configurare Tesseract reale con ottimizzazioni italiane
 - [ ] Implementare parsing KIE avanzato per layout scontrini
-- [ ] Aggiungere pre-processing immagini (deskew, denoise)
+- [x] Aggiungere pre-processing immagini (deskew, denoise)
 - [ ] Test accuratezza OCR
 
 ### 3.2 **ML Model Training Pipeline** 🤖 ALTO
