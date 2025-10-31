@@ -132,19 +132,11 @@ namespace WIB.API.Controllers
 
         private async Task UpdateReceiptStoreAsync(Receipt receipt, string storeName, CancellationToken ct)
         {
-            var lower = storeName.ToLowerInvariant();
-            var store = await _db.Stores.FirstOrDefaultAsync(s => s.Name.ToLower() == lower, ct);
-            
-            if (store == null)
-            {
-                var normalized = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
-                store = new Store { Name = normalized };
-                _db.Stores.Add(store);
-                // Defer SaveChanges to the end (single transaction)
-            }
-            
-            receipt.StoreId = store.Id;
-            receipt.Store = store;
+            // Delegate rename/merge logic to StoreService (EF-only, no raw SQL)
+            var storeSvc = HttpContext.RequestServices.GetRequiredService<IStoreService>();
+            var result = await storeSvc.RenameOrMergeAsync(receipt.StoreId, storeName, ct);
+            receipt.StoreId = result.Id;
+            receipt.Store = result;
         }
 
         private async Task UpdateStoreLocationAsync(Receipt receipt, EditReceiptRequest body, CancellationToken ct)

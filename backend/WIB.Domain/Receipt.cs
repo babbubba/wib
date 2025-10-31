@@ -52,8 +52,19 @@ public class Store
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
     public string? Chain { get; set; }
+    public string? NameNormalized { get; set; }
     public List<Receipt> Receipts { get; set; } = new();
     public List<StoreLocation> Locations { get; set; } = new();
+    public List<StoreAlias> Aliases { get; set; } = new();
+}
+
+public class StoreAlias
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StoreId { get; set; }
+    public Store? Store { get; set; }
+    public string AliasNormalized { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class StoreLocation

@@ -435,11 +435,45 @@ namespace WIB.Infrastructure.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("NameNormalized")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("NameNormalized")
+                        .IsUnique();
+
                     b.ToTable("Stores");
+                });
+
+            modelBuilder.Entity("WIB.Domain.StoreAlias", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AliasNormalized")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreId", "AliasNormalized")
+                        .IsUnique();
+
+                    b.ToTable("StoreAliases");
                 });
 
             modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
@@ -671,6 +705,17 @@ namespace WIB.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("WIB.Domain.StoreAlias", b =>
+                {
+                    b.HasOne("WIB.Domain.Store", "Store")
+                        .WithMany("Aliases")
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("WIB.Domain.StoreLocation", b =>
                 {
                     b.HasOne("WIB.Domain.Store", "Store")
@@ -723,6 +768,8 @@ namespace WIB.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("WIB.Domain.Store", b =>
                 {
+                    b.Navigation("Aliases");
+
                     b.Navigation("Locations");
 
                     b.Navigation("Receipts");
